@@ -1,0 +1,50 @@
+{
+  "name": "@nadohq/nado-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MCP server for interacting with the Nado Protocol",
+  "author": "Nado",
+  "license": "ISC",
+  "bin": {
+    "nado-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "dev": "tsup --watch",
+    "lint": "eslint --cache --fix './**/*.{ts,tsx}' && prettier --write './**/*.{ts,tsx}'",
+    "lint:check": "eslint --cache './**/*.{ts,tsx}'",
+    "format": "prettier --write './src/**/*.ts' --log-level warn",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@nadohq/client": "^0.1.0-alpha.51",
+    "viem": "^2.47.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^24.10.9",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.1",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0"
+  },
+  "packageManager": "bun@1.3.7",
+  "overrides": {
+    "zod": "^4.3.6"
+  }
+}

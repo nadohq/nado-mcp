@@ -1,0 +1,33 @@
+*.env
+.env.*
+!.env.example
+
+.DS_Store
+.idea/
+.vscode
+.cursor*
+.windsurf*
+.codeium*
+
+*.tsbuildinfo
+dist/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Coverage
+coverage
+.nyc_output
+
+# Dependencies
+node_modules
+
+# eslint
+.eslintcache
