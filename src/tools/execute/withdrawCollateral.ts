@@ -21,13 +21,13 @@ export function registerWithdrawCollateral(
         'Use get_all_markets to find spot product IDs.',
       inputSchema: {
         productId: ProductIdSchema.describe(
-          'Spot product ID to withdraw (e.g. 0 for USDT)',
+          'Spot product ID to withdraw (e.g. 0 for USDT0)',
         ),
         amount: z
           .number()
           .positive()
           .describe(
-            'Amount to withdraw in human-readable units (e.g. 100 for 100 USDT)',
+            'Amount to withdraw in human-readable units (e.g. 100 for 100 USDT0)',
           ),
         spotLeverage: z
           .boolean()

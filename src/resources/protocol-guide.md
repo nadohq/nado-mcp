@@ -8,7 +8,7 @@ Nado is a decentralized derivatives exchange (DEX) running on the Ink blockchain
 
 ### Products & Markets
 
-- **Spot markets**: Trade tokens directly (e.g. wETH, wBTC). Product IDs are even numbers (0, 2, 4...). Product ID 0 is always the quote token (USDC).
+- **Spot markets**: Trade tokens directly (e.g. wETH, kBTC). Product IDs are even numbers (0, 2, 4...). Product ID 0 is always the quote token (USDT0).
 - **Perp markets**: Perpetual futures contracts that track an underlying asset's price without expiry. Product IDs are odd numbers (1, 3, 5...).
 - Each market has a **product ID** (numeric identifier used in all API calls), a **symbol** (human-readable name like "BTC-PERP"), and properties like minimum order size, price increment, and size increment.
 
@@ -45,7 +45,7 @@ Nado uses a **cross-margin** system by default, where all positions in a subacco
 
 The **Nado Liquidity Provider (NLP) vault** is a protocol-owned liquidity pool that acts as the counterparty to traders on the platform.
 
-- Depositors provide USDC to the vault and receive NLP tokens representing their share.
+- Depositors provide USDT0 to the vault and receive NLP tokens representing their share.
 - The vault earns trading fees and PnL from taking the opposite side of user trades.
 - Deposits may have a **lock period** before they can be withdrawn.
 - The vault is split into **sub-pools**, each with its own weight, positions, and margin health.

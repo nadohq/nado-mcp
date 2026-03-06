@@ -15,7 +15,7 @@ export function registerBurnNlp(
     {
       title: 'Burn NLP',
       description:
-        'Burn NLP tokens to withdraw quote (USDT) from the NLP vault. ' +
+        'Burn NLP tokens to withdraw quote (USDT0) from the NLP vault. ' +
         'Only unlocked NLP tokens can be burned. ' +
         'Use get_nlp_locked_balances to check unlocked balance, and get_nlp_max_mint_burn to check the maximum burn amount.',
       inputSchema: {

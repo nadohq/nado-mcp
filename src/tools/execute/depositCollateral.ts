@@ -19,16 +19,16 @@ export function registerDepositCollateral(
         'Deposit collateral from the wallet into a subaccount. ' +
         'This is an on-chain transaction that requires gas (native token for fees). ' +
         'Automatically approves the token spending allowance before depositing. ' +
-        'Use get_all_markets to find spot product IDs (e.g. 0 for USDT).',
+        'Use get_all_markets to find spot product IDs (e.g. 0 for USDT0).',
       inputSchema: {
         productId: ProductIdSchema.describe(
-          'Spot product ID to deposit (e.g. 0 for USDT)',
+          'Spot product ID to deposit (e.g. 0 for USDT0)',
         ),
         amount: z
           .number()
           .positive()
           .describe(
-            'Amount to deposit in human-readable units (e.g. 100 for 100 USDT)',
+            'Amount to deposit in human-readable units (e.g. 100 for 100 USDT0)',
           ),
       },
       annotations: { readOnlyHint: false },

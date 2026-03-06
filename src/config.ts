@@ -1,6 +1,9 @@
 import { ALL_CHAIN_ENVS, type ChainEnv } from '@nadohq/client';
 
-/** Server configuration parsed from environment variables. */
+/**
+ * Server configuration parsed from environment variables.
+ * Variables are typically set via the MCP client config (e.g. .cursor/mcp.json "env" block).
+ */
 export interface ServerConfig {
   chainEnv: ChainEnv;
   rpcUrl?: string;
@@ -9,7 +12,7 @@ export interface ServerConfig {
 }
 
 /**
- * Loads server configuration from environment variables.
+ * Loads server configuration from environment variables supplied by the MCP client.
  * @returns Parsed and validated server configuration.
  * @throws {Error} When CHAIN_ENV is missing or invalid.
  */

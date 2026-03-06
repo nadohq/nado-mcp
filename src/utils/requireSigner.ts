@@ -15,7 +15,7 @@ export function requireSigner(
   if (!ctx.subaccountOwner) {
     throw new ToolExecutionError(
       toolName,
-      'PRIVATE_KEY env var is required for write operations. Set it in your MCP server configuration.',
+      'PRIVATE_KEY is required for write operations. Set it in the "env" block of your MCP client config (e.g. .cursor/mcp.json).',
     );
   }
 }

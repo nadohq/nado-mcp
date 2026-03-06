@@ -15,7 +15,7 @@ bun install
 bun run build
 ```
 
-That's it — the built server is at `dist/index.js`. No `.env` file is needed when you pass environment variables through your MCP client config (see below).
+That's it — the built server is at `dist/index.js`. Configure environment variables (including `PRIVATE_KEY`) in your MCP client config (see below) — no `.env` file needed.
 
 ## MCP Client Setup
 
@@ -30,7 +30,8 @@ Add to your `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
       "command": "node",
       "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
       "env": {
-        "CHAIN_ENV": "inkMainnet"
+        "CHAIN_ENV": "inkMainnet",
+        "PRIVATE_KEY": "0xYOUR_PRIVATE_KEY"
       }
     }
   }
@@ -48,7 +49,8 @@ Add to your `claude_desktop_config.json`:
       "command": "node",
       "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
       "env": {
-        "CHAIN_ENV": "inkMainnet"
+        "CHAIN_ENV": "inkMainnet",
+        "PRIVATE_KEY": "0xYOUR_PRIVATE_KEY"
       }
     }
   }
@@ -59,13 +61,13 @@ Replace `/absolute/path/to/nado-mcp` with the actual path where you cloned the r
 
 ## Environment Variables
 
-You can pass these as `env` in the MCP client config above, or create a `.env` file (copy from `.env.example`):
+Set these in the `"env"` block of your MCP client config (recommended). A `.env` file can be used as a fallback for local development:
 
 | Variable          | Required | Default       | Description                                      |
 | ----------------- | -------- | ------------- | ------------------------------------------------ |
 | `CHAIN_ENV`       | Yes      | —             | `inkMainnet` ([app.nado.xyz](https://app.nado.xyz)) or `inkTestnet` ([testnet.nado.xyz](https://testnet.nado.xyz)) |
 | `RPC_URL`         | No       | Chain default | Custom RPC URL                                   |
-| `PRIVATE_KEY`     | No       | —             | Private key for write operations (Phase 2)       |
+| `PRIVATE_KEY`     | No       | —             | Private key for write operations                 |
 | `SUBACCOUNT_NAME` | No       | `default`     | Default subaccount name                          |
 
 When `PRIVATE_KEY` is not set, the server runs in **read-only mode**.
