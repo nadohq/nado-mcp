@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+// FRANK: could this read from an `md` file?
 const PROTOCOL_GUIDE = `# Nado Protocol Guide
 
 ## What is Nado?

@@ -40,6 +40,7 @@ export function registerGetFundingPayments(
       limit: number;
     }) => {
       try {
+        // FRANK: `asyncResult` could clean up some of these
         const payments =
           await client.context.indexerClient.getInterestFundingPayments({
             subaccount: { subaccountOwner, subaccountName },

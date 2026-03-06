@@ -4,6 +4,7 @@ import { NADO_DEPLOYMENTS, type ChainEnv } from '@nadohq/client';
 
 import { toJsonContent } from '../utils/formatting.js';
 
+// FRANK: Can just use `ALL_CHAIN_ENVS` - realistically nobody is going to use local
 const VALID_ENVS = new Set<string>(['inkMainnet', 'inkTestnet']);
 
 export function registerDeploymentsResource(server: McpServer): void {

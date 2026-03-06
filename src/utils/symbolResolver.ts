@@ -1,8 +1,10 @@
 import type { NadoClient } from '@nadohq/client';
 
+// FRANK: maybe better to call the `/api/product-metadata` endpoint on web instead. it includes search terms
 interface ResolvedMarket {
   productId: number;
   symbol: string;
+  // FRANK: ProductEngineType
   type: 'spot' | 'perp';
 }
 

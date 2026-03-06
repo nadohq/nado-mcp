@@ -1,5 +1,7 @@
 import BigNumber from 'bignumber.js';
 
+// FRANK: There is `toPrintableObject` from SDK
+
 /**
  * JSON.stringify replacer that converts BigNumber / BigDecimal instances to
  * human-readable fixed-point strings so LLMs can reason about numeric values.

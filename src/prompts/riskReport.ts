@@ -75,6 +75,7 @@ export function registerRiskReportPrompt(
       }
       if (triggerOrders.status === 'fulfilled') {
         sections.push(
+          // FRANK: TPSLs are reduce-only, these would include regular stop orders as well
           `## Active Trigger Orders (SL/TP/TWAP)\n${toJsonContent(triggerOrders.value)}`,
         );
       }
