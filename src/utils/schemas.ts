@@ -1,6 +1,8 @@
+import { ALL_CHAIN_ENVS, CandlestickPeriod } from '@nadohq/client';
+import { isAddress } from 'viem';
 import { z } from 'zod';
 
-export const ChainEnvSchema = z.enum(['inkMainnet', 'inkTestnet']);
+export const ChainEnvSchema = z.enum(ALL_CHAIN_ENVS);
 
 export const ProductIdSchema = z
   .number()
@@ -10,35 +12,38 @@ export const ProductIdSchema = z
 
 export const ProductIdsSchema = z
   .array(ProductIdSchema)
-  .min(1)
   .describe('Array of numeric product IDs');
 
 export const SubaccountOwnerSchema = z
   .string()
-  .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be a valid 20-byte hex address')
+  .refine(isAddress, 'Must be a valid Ethereum address')
   .describe('Wallet address that owns the subaccount');
+
+const MAX_SUBACCOUNT_NAME_BYTES = 12;
 
 export const SubaccountNameSchema = z
   .string()
-  .max(12)
   .default('default')
+  .refine(
+    (v) => new TextEncoder().encode(v).length <= MAX_SUBACCOUNT_NAME_BYTES,
+    `Subaccount name must be at most ${MAX_SUBACCOUNT_NAME_BYTES} bytes`,
+  )
   .describe('Subaccount name (max 12 bytes, defaults to "default")');
 
 export const BalanceSideSchema = z
   .enum(['long', 'short'])
   .describe('Order side: long (buy) or short (sell)');
 
+const CANDLESTICK_PERIODS = Object.values(CandlestickPeriod).filter(
+  (v): v is number => typeof v === 'number',
+);
+
 export const CandlestickPeriodSchema = z
   .number()
   .int()
-  .refine(
-    (v) =>
-      [60, 300, 900, 3600, 7200, 14400, 86400, 604800, 2419200].includes(v),
-    {
-      message:
-        'Must be a valid period in seconds: 60, 300, 900, 3600, 7200, 14400, 86400, 604800, 2419200',
-    },
-  )
+  .refine((v) => CANDLESTICK_PERIODS.includes(v), {
+    message: `Must be a valid period in seconds: ${CANDLESTICK_PERIODS.join(', ')}`,
+  })
   .describe(
     'Candlestick period in seconds (60=1m, 300=5m, 900=15m, 3600=1h, 7200=2h, 14400=4h, 86400=1d, 604800=1w, 2419200=1M)',
   );
@@ -47,6 +52,5 @@ export const PaginationLimitSchema = z
   .number()
   .int()
   .positive()
-  .max(500)
   .default(100)
   .describe('Maximum number of results to return (1-500, default 100)');

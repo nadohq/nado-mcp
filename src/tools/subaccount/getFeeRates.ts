@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,22 +29,15 @@ export function registerGetFeeRates(
     }: {
       subaccountOwner: string;
       subaccountName: string;
-    }) => {
-      try {
-        const feeRates = await client.subaccount.getSubaccountFeeRates({
-          subaccountOwner,
-          subaccountName,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(feeRates) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_fee_rates',
-          `Failed to fetch fee rates for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_fee_rates',
+        `Failed to fetch fee rates for ${subaccountOwner}/${subaccountName}.`,
+        () =>
+          client.subaccount.getSubaccountFeeRates({
+            subaccountOwner,
+            subaccountName,
+          }),
+      ),
   );
 }

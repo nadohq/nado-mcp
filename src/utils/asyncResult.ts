@@ -1,0 +1,21 @@
+import { ToolExecutionError } from './errors.js';
+import { toJsonContent } from './formatting.js';
+
+/**
+ * Wraps an async tool handler: serializes the result to JSON on success,
+ * or throws a {@link ToolExecutionError} on failure.
+ */
+export async function asyncResult<T>(
+  toolName: string,
+  errorMessage: string,
+  fn: () => Promise<T>,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  try {
+    const result = await fn();
+    return {
+      content: [{ type: 'text' as const, text: toJsonContent(result) }],
+    };
+  } catch (err) {
+    throw new ToolExecutionError(toolName, errorMessage, err);
+  }
+}

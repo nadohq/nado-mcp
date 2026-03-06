@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   ProductIdSchema,
   SubaccountNameSchema,
@@ -36,28 +35,18 @@ export function registerGetMaxWithdrawable(
       subaccountOwner: string;
       subaccountName: string;
       productId: number;
-    }) => {
-      try {
-        const maxWithdrawable = await client.spot.getMaxWithdrawable({
-          subaccountOwner,
-          subaccountName,
-          productId,
-        });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: toJsonContent({ maxWithdrawable }),
-            },
-          ],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_max_withdrawable',
-          `Failed to fetch max withdrawable for product ${productId}. Ensure this is a spot product ID.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_max_withdrawable',
+        `Failed to fetch max withdrawable for product ${productId}. Ensure this is a spot product ID.`,
+        async () => {
+          const maxWithdrawable = await client.spot.getMaxWithdrawable({
+            subaccountOwner,
+            subaccountName,
+            productId,
+          });
+          return { maxWithdrawable };
+        },
+      ),
   );
 }

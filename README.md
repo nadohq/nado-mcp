@@ -85,7 +85,6 @@ The server follows a modular registration pattern:
 
 - **`src/tools/`** — MCP tools wrapping NadoClient query methods
 - **`src/resources/`** — Static/semi-static data exposed as MCP resources
-- **`src/prompts/`** — Reusable prompt templates for common workflows
 - **`src/utils/`** — Shared schemas, error classes, and formatting utilities
 
-Each tool/resource/prompt is registered on the McpServer instance during startup via its module's `register*` function.
+Each tool and resource is registered on the McpServer instance during startup via its module's `register*` function.

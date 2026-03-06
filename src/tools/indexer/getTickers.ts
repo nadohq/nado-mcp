@@ -2,8 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 
 export function registerGetTickers(
   server: McpServer,
@@ -23,21 +22,9 @@ export function registerGetTickers(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ market }: { market?: 'spot' | 'perp' }) => {
-      try {
-        const tickers = await client.context.indexerClient.getV2Tickers({
-          market,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(tickers) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_tickers',
-          'Failed to fetch tickers.',
-          err,
-        );
-      }
-    },
+    async ({ market }: { market?: 'spot' | 'perp' }) =>
+      asyncResult('get_tickers', 'Failed to fetch tickers.', () =>
+        client.context.indexerClient.getV2Tickers({ market }),
+      ),
   );
 }

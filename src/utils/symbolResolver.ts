@@ -1,115 +1,119 @@
-import type { NadoClient } from '@nadohq/client';
+import { ProductEngineType, type ChainEnv } from '@nadohq/client';
 
-interface ResolvedMarket {
+const METADATA_URL = 'https://app.nado.xyz/api/product-metadata';
+
+export interface ResolvedMarket {
   productId: number;
   symbol: string;
-  type: 'spot' | 'perp';
+  type: ProductEngineType;
 }
 
-const COMMON_ALIASES: Record<string, string> = {
-  bitcoin: 'btc',
-  ethereum: 'eth',
-  solana: 'sol',
-  ripple: 'xrp',
-  dogecoin: 'doge',
-  cardano: 'ada',
-  avalanche: 'avax',
-  chainlink: 'link',
-  uniswap: 'uni',
-  litecoin: 'ltc',
-  monero: 'xmr',
-  gold: 'xaut',
-  tao: 'tao',
-  bittensor: 'tao',
-  hyperliquid: 'hype',
-  jupiter: 'jup',
-  sui: 'sui',
-  aave: 'aave',
-  pengu: 'pengu',
-  penguin: 'pengu',
-  fartcoin: 'fartcoin',
-  bonk: 'bonk',
-  pepe: 'pepe',
-  virtual: 'virtual',
-  near: 'near',
-  arbitrum: 'arb',
-  ondo: 'ondo',
-  ethena: 'ena',
-  bnb: 'bnb',
-  binance: 'bnb',
-};
+interface ProductMetadataEntry {
+  marketName: string;
+  symbol: string;
+  altSearchTerms: string[];
+  quoteProductId: number;
+  marketCategories: string[];
+}
+
+interface EnvMetadata {
+  perp: Record<string, ProductMetadataEntry>;
+  spot: Record<string, ProductMetadataEntry>;
+}
+
+interface SearchEntry {
+  productId: number;
+  symbol: string;
+  type: ProductEngineType;
+  terms: string[];
+}
+
+let cached: Record<string, EnvMetadata> | null = null;
+
+async function fetchMetadata(): Promise<Record<string, EnvMetadata>> {
+  if (cached) return cached;
+  const res = await fetch(METADATA_URL);
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch product metadata: ${res.status} ${res.statusText}`,
+    );
+  }
+  cached = (await res.json()) as Record<string, EnvMetadata>;
+  return cached;
+}
+
+function buildSearchEntries(env: EnvMetadata): SearchEntry[] {
+  const entries: SearchEntry[] = [];
+
+  for (const [id, entry] of Object.entries(env.perp)) {
+    entries.push({
+      productId: Number(id),
+      symbol: entry.symbol,
+      type: ProductEngineType.PERP,
+      terms: [entry.symbol, ...entry.altSearchTerms].map((s) =>
+        s.toLowerCase(),
+      ),
+    });
+  }
+
+  for (const [id, entry] of Object.entries(env.spot)) {
+    entries.push({
+      productId: Number(id),
+      symbol: entry.symbol,
+      type: ProductEngineType.SPOT,
+      terms: [entry.symbol, ...entry.altSearchTerms].map((s) =>
+        s.toLowerCase(),
+      ),
+    });
+  }
+
+  return entries;
+}
 
 /**
- * Resolves a human-readable market query (e.g. "bitcoin", "eth", "BTC-PERP")
- * to a concrete product. Prefers perp products over spot for analysis.
+ * Resolves a human-readable market query (e.g. "bitcoin", "eth", "SOL")
+ * to a concrete product using the web API's search terms.
+ * Prefers perp markets over spot when ambiguous.
  */
 export async function resolveMarket(
-  client: NadoClient,
+  chainEnv: ChainEnv,
   query: string,
 ): Promise<ResolvedMarket> {
-  const { symbols } = await client.context.engineClient.getSymbols({});
+  const metadata = await fetchMetadata();
+  const env = metadata[chainEnv];
+  if (!env) {
+    throw new Error(`No product metadata for chain env: ${chainEnv}`);
+  }
 
-  const entries = Object.values(symbols);
+  const entries = buildSearchEntries(env);
   const normalized = query.trim().toLowerCase();
 
-  // Expand common name aliases
-  const alias = COMMON_ALIASES[normalized] ?? normalized;
+  // 1) Exact match on symbol or search term
+  const exact = entries.find((e) => e.terms.includes(normalized));
+  if (exact) return pick(exact);
 
-  // 1) Exact symbol match (case-insensitive)
-  const exact = entries.find(
-    (s) =>
-      s.symbol.toLowerCase() === alias || s.symbol.toLowerCase() === normalized,
+  // 2) Substring match — prefer perps over spot
+  const substring = entries.filter((e) =>
+    e.terms.some((t) => t.includes(normalized) || normalized.includes(t)),
   );
-  if (exact) {
-    return toResolved(exact);
-  }
-
-  // 2) Match "{alias}-PERP" pattern  (e.g. "btc" -> "BTC-PERP")
-  const perpMatch = entries.find(
-    (s) => s.symbol.toLowerCase() === `${alias}-perp`,
-  );
-  if (perpMatch) {
-    return toResolved(perpMatch);
-  }
-
-  // 3) Match with k-prefix perps (e.g. "pepe" -> "kPEPE-PERP", "bonk" -> "kBONK-PERP")
-  const kPerpMatch = entries.find(
-    (s) => s.symbol.toLowerCase() === `k${alias}-perp`,
-  );
-  if (kPerpMatch) {
-    return toResolved(kPerpMatch);
-  }
-
-  // 4) Substring match -- prefer perps over spot
-  const substringMatches = entries.filter(
-    (s) =>
-      s.symbol.toLowerCase().includes(alias) ||
-      s.symbol.toLowerCase().includes(normalized),
-  );
-  if (substringMatches.length > 0) {
-    const perp = substringMatches.find((s) =>
-      s.symbol.toLowerCase().endsWith('-perp'),
-    );
-    return toResolved(perp ?? substringMatches[0]);
+  if (substring.length > 0) {
+    const perp = substring.find((e) => e.type === ProductEngineType.PERP);
+    return pick(perp ?? substring[0]);
   }
 
   const available = entries
-    .filter((s) => s.symbol.endsWith('-PERP'))
-    .map((s) => s.symbol)
+    .filter((e) => e.type === ProductEngineType.PERP)
+    .map((e) => e.symbol)
     .join(', ');
   throw new Error(
-    `Could not find a market matching "${query}". Available perp markets: ${available}`,
+    `Could not find a market matching "${query}". Available perp symbols: ${available}`,
   );
 }
 
-function toResolved(symbol: {
-  productId: number;
-  symbol: string;
-  type: { toString(): string };
-}): ResolvedMarket {
+function pick(entry: SearchEntry): ResolvedMarket {
   return {
-    productId: symbol.productId,
-    symbol: symbol.symbol,
-    type: symbol.symbol.endsWith('-PERP') ? 'perp' : 'spot',
+    productId: entry.productId,
+    symbol: entry.symbol,
+    type: entry.type,
   };
 }

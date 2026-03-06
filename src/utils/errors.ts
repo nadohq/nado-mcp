@@ -8,7 +8,8 @@ export class ToolExecutionError extends Error {
     message: string,
     readonly cause?: unknown,
   ) {
-    super(`[${toolName}] ${message}`);
+    const causeMsg = cause instanceof Error ? `: ${cause.message}` : '';
+    super(`[${toolName}] ${message}${causeMsg}`);
     this.name = 'ToolExecutionError';
   }
 }

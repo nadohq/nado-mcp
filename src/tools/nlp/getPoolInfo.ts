@@ -3,8 +3,7 @@ import type { NadoClient, NlpPool, ProductEngineType } from '@nadohq/client';
 import { removeDecimals, subaccountFromHex } from '@nadohq/client';
 import BigNumber from 'bignumber.js';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 
 interface AggregatedPosition {
   symbol: string;
@@ -196,113 +195,103 @@ export function registerGetNlpPoolInfo(
         'Get the current state of the NLP vault: all sub-pools with their balance weights, positions, open orders, PnL, and margin health. No input needed -- returns the full vault-level view. Positions are aggregated across all sub-pools into one unified view. Use this to analyze vault risk, current exposure, and pool composition. For historical vault trends, use get_nlp_snapshots instead.',
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      try {
-        const [poolInfo, { symbols }] = await Promise.all([
-          client.context.engineClient.getNlpPoolInfo(),
-          client.context.engineClient.getSymbols({}),
-        ]);
+    async () =>
+      asyncResult(
+        'get_nlp_pool_info',
+        'Failed to fetch NLP pool info.',
+        async () => {
+          const [poolInfo, { symbols }] = await Promise.all([
+            client.context.engineClient.getNlpPoolInfo(),
+            client.context.engineClient.getSymbols({}),
+          ]);
 
-        const symbolMap = new Map<number, string>();
-        for (const s of Object.values(symbols)) {
-          symbolMap.set(s.productId, s.symbol);
-        }
-
-        const { nlpPools } = poolInfo;
-
-        // Fetch indexer snapshots for entry price and PnL
-        const snapshotsByPoolId = new Map<
-          number,
-          Map<
-            number,
-            { netEntryUnrealized: BigNumber; netFundingUnrealized: BigNumber }
-          >
-        >();
-
-        try {
-          const poolsToQuery = nlpPools.filter(
-            (p) => p.subaccountHex && p.subaccountHex !== '0x',
-          );
-          if (poolsToQuery.length > 0) {
-            const now = Math.floor(Date.now() / 1000);
-            const snapshotsResponse =
-              await client.context.indexerClient.getMultiSubaccountSnapshots({
-                subaccounts: poolsToQuery.map((pool) =>
-                  subaccountFromHex(pool.subaccountHex),
-                ),
-                timestamps: [now],
-              });
-
-            for (const pool of poolsToQuery) {
-              const poolSnapshots =
-                snapshotsResponse.snapshots[pool.subaccountHex];
-              if (!poolSnapshots) continue;
-
-              const snapshot = Object.values(poolSnapshots)[0];
-              if (!snapshot?.balances) continue;
-
-              const balMap = new Map<
-                number,
-                {
-                  netEntryUnrealized: BigNumber;
-                  netFundingUnrealized: BigNumber;
-                }
-              >();
-              for (const bal of snapshot.balances) {
-                balMap.set(bal.productId, {
-                  netEntryUnrealized: new BigNumber(
-                    bal.trackedVars.netEntryUnrealized.toString(),
-                  ),
-                  netFundingUnrealized: new BigNumber(
-                    bal.trackedVars.netFundingUnrealized.toString(),
-                  ),
-                });
-              }
-              snapshotsByPoolId.set(pool.poolId, balMap);
-            }
+          const symbolMap = new Map<number, string>();
+          for (const s of Object.values(symbols)) {
+            symbolMap.set(s.productId, s.symbol);
           }
-        } catch {
-          // Snapshots are best-effort; positions still show without them
-        }
 
-        const positions = aggregatePositions(
-          nlpPools,
-          symbolMap,
-          snapshotsByPoolId,
-        );
-        const openOrders = aggregateOrders(nlpPools, symbolMap);
-        const poolSummaries = nlpPools.map(summarizePool);
+          const { nlpPools } = poolInfo;
 
-        const spotPositions = positions.filter((p) => p.type === 'spot');
-        const perpPositions = positions.filter((p) => p.type === 'perp');
+          // Fetch indexer snapshots for entry price and PnL
+          const snapshotsByPoolId = new Map<
+            number,
+            Map<
+              number,
+              { netEntryUnrealized: BigNumber; netFundingUnrealized: BigNumber }
+            >
+          >();
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: toJsonContent({
-                totalSubPools: nlpPools.length,
-                poolSummaries,
-                aggregatedPositions: {
-                  totalPositions: positions.length,
-                  spotPositions,
-                  perpPositions,
-                },
-                openOrders: {
-                  totalOrders: openOrders.length,
-                  orders: openOrders,
-                },
-              }),
+          try {
+            const poolsToQuery = nlpPools.filter(
+              (p) => p.subaccountHex && p.subaccountHex !== '0x',
+            );
+            if (poolsToQuery.length > 0) {
+              const now = Math.floor(Date.now() / 1000);
+              const snapshotsResponse =
+                await client.context.indexerClient.getMultiSubaccountSnapshots({
+                  subaccounts: poolsToQuery.map((pool) =>
+                    subaccountFromHex(pool.subaccountHex),
+                  ),
+                  timestamps: [now],
+                });
+
+              for (const pool of poolsToQuery) {
+                const poolSnapshots =
+                  snapshotsResponse.snapshots[pool.subaccountHex];
+                if (!poolSnapshots) continue;
+
+                const snapshot = Object.values(poolSnapshots)[0];
+                if (!snapshot?.balances) continue;
+
+                const balMap = new Map<
+                  number,
+                  {
+                    netEntryUnrealized: BigNumber;
+                    netFundingUnrealized: BigNumber;
+                  }
+                >();
+                for (const bal of snapshot.balances) {
+                  balMap.set(bal.productId, {
+                    netEntryUnrealized: new BigNumber(
+                      bal.trackedVars.netEntryUnrealized.toString(),
+                    ),
+                    netFundingUnrealized: new BigNumber(
+                      bal.trackedVars.netFundingUnrealized.toString(),
+                    ),
+                  });
+                }
+                snapshotsByPoolId.set(pool.poolId, balMap);
+              }
+            }
+          } catch {
+            // Snapshots are best-effort; positions still show without them
+          }
+
+          const positions = aggregatePositions(
+            nlpPools,
+            symbolMap,
+            snapshotsByPoolId,
+          );
+          const openOrders = aggregateOrders(nlpPools, symbolMap);
+          const poolSummaries = nlpPools.map(summarizePool);
+
+          const spotPositions = positions.filter((p) => p.type === 'spot');
+          const perpPositions = positions.filter((p) => p.type === 'perp');
+
+          return {
+            totalSubPools: nlpPools.length,
+            poolSummaries,
+            aggregatedPositions: {
+              totalPositions: positions.length,
+              spotPositions,
+              perpPositions,
             },
-          ],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_nlp_pool_info',
-          'Failed to fetch NLP pool info.',
-          err,
-        );
-      }
-    },
+            openOrders: {
+              totalOrders: openOrders.length,
+              orders: openOrders,
+            },
+          };
+        },
+      ),
   );
 }

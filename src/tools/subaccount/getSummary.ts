@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,22 +29,15 @@ export function registerGetSubaccountSummary(
     }: {
       subaccountOwner: string;
       subaccountName: string;
-    }) => {
-      try {
-        const summary = await client.subaccount.getSubaccountSummary({
-          subaccountOwner,
-          subaccountName,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(summary) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_subaccount_summary',
-          `Failed to fetch summary for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_subaccount_summary',
+        `Failed to fetch summary for ${subaccountOwner}/${subaccountName}.`,
+        () =>
+          client.subaccount.getSubaccountSummary({
+            subaccountOwner,
+            subaccountName,
+          }),
+      ),
   );
 }

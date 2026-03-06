@@ -2,8 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import { PaginationLimitSchema } from '../../utils/schemas.js';
 
 export function registerListSubaccounts(
@@ -28,22 +27,15 @@ export function registerListSubaccounts(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ address, limit }: { address?: string; limit: number }) => {
-      try {
-        const subaccounts = await client.context.indexerClient.listSubaccounts({
-          address,
-          limit,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(subaccounts) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'list_subaccounts',
-          `Failed to list subaccounts${address ? ` for ${address}` : ''}.`,
-          err,
-        );
-      }
-    },
+    async ({ address, limit }: { address?: string; limit: number }) =>
+      asyncResult(
+        'list_subaccounts',
+        `Failed to list subaccounts${address ? ` for ${address}` : ''}.`,
+        () =>
+          client.context.indexerClient.listSubaccounts({
+            address,
+            limit,
+          }),
+      ),
   );
 }

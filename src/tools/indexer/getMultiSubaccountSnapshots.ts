@@ -2,8 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -39,23 +38,15 @@ export function registerGetMultiSubaccountSnapshots(
       subaccountOwner: string;
       subaccountName: string;
       timestamps: number[];
-    }) => {
-      try {
-        const snapshots =
-          await client.context.indexerClient.getMultiSubaccountSnapshots({
+    }) =>
+      asyncResult(
+        'get_multi_subaccount_snapshots',
+        `Failed to fetch subaccount snapshots for ${subaccountOwner}/${subaccountName}.`,
+        () =>
+          client.context.indexerClient.getMultiSubaccountSnapshots({
             subaccounts: [{ subaccountOwner, subaccountName }],
             timestamps,
-          });
-        return {
-          content: [{ type: 'text', text: toJsonContent(snapshots) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_multi_subaccount_snapshots',
-          `Failed to fetch subaccount snapshots for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+          }),
+      ),
   );
 }

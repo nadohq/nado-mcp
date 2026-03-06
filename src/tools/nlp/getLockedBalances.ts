@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,24 +29,15 @@ export function registerGetNlpLockedBalances(
     }: {
       subaccountOwner: string;
       subaccountName: string;
-    }) => {
-      try {
-        const balances = await client.context.engineClient.getNlpLockedBalances(
-          {
+    }) =>
+      asyncResult(
+        'get_nlp_locked_balances',
+        `Failed to fetch NLP locked balances for ${subaccountOwner}/${subaccountName}.`,
+        () =>
+          client.context.engineClient.getNlpLockedBalances({
             subaccountOwner,
             subaccountName,
-          },
-        );
-        return {
-          content: [{ type: 'text', text: toJsonContent(balances) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_nlp_locked_balances',
-          `Failed to fetch NLP locked balances for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+          }),
+      ),
   );
 }

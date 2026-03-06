@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 
 export function registerGetAllMarkets(
   server: McpServer,
@@ -16,19 +15,11 @@ export function registerGetAllMarkets(
         'List all available Nado markets with product info (product ID, symbol, type, state). Use this first to discover valid product IDs before calling other market tools. Returns both spot and perp markets. Call this once and cache the results rather than calling repeatedly.',
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      try {
-        const markets = await client.market.getAllMarkets();
-        return {
-          content: [{ type: 'text', text: toJsonContent(markets) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_all_markets',
-          'Failed to fetch markets. The engine may be temporarily unavailable.',
-          err,
-        );
-      }
-    },
+    async () =>
+      asyncResult(
+        'get_all_markets',
+        'Failed to fetch markets. The engine may be temporarily unavailable.',
+        () => client.market.getAllMarkets(),
+      ),
   );
 }

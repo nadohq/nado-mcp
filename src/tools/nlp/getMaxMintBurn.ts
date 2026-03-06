@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,36 +29,23 @@ export function registerGetNlpMaxMintBurn(
     }: {
       subaccountOwner: string;
       subaccountName: string;
-    }) => {
-      try {
-        const [maxMint, maxBurn] = await Promise.all([
-          client.context.engineClient.getMaxMintNlpAmount({
-            subaccountOwner,
-            subaccountName,
-          }),
-          client.context.engineClient.getMaxBurnNlpAmount({
-            subaccountOwner,
-            subaccountName,
-          }),
-        ]);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: toJsonContent({
-                maxMintQuoteAmount: maxMint,
-                maxBurnNlpAmount: maxBurn,
-              }),
-            },
-          ],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_nlp_max_mint_burn',
-          `Failed to fetch NLP mint/burn limits for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_nlp_max_mint_burn',
+        `Failed to fetch NLP mint/burn limits for ${subaccountOwner}/${subaccountName}.`,
+        async () => {
+          const [maxMint, maxBurn] = await Promise.all([
+            client.context.engineClient.getMaxMintNlpAmount({
+              subaccountOwner,
+              subaccountName,
+            }),
+            client.context.engineClient.getMaxBurnNlpAmount({
+              subaccountOwner,
+              subaccountName,
+            }),
+          ]);
+          return { maxMintQuoteAmount: maxMint, maxBurnNlpAmount: maxBurn };
+        },
+      ),
   );
 }

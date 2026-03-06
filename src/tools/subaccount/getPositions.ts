@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,22 +29,15 @@ export function registerGetIsolatedPositions(
     }: {
       subaccountOwner: string;
       subaccountName: string;
-    }) => {
-      try {
-        const positions = await client.subaccount.getIsolatedPositions({
-          subaccountOwner,
-          subaccountName,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(positions) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_isolated_positions',
-          `Failed to fetch isolated positions for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_isolated_positions',
+        `Failed to fetch isolated positions for ${subaccountOwner}/${subaccountName}.`,
+        () =>
+          client.subaccount.getIsolatedPositions({
+            subaccountOwner,
+            subaccountName,
+          }),
+      ),
   );
 }

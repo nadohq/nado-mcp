@@ -3,8 +3,7 @@ import type { NadoClient } from '@nadohq/client';
 import { toBigDecimal } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   BalanceSideSchema,
   ProductIdSchema,
@@ -43,30 +42,20 @@ export function registerGetMaxOrderSize(
       productId: number;
       price: number;
       side: 'long' | 'short';
-    }) => {
-      try {
-        const maxSize = await client.market.getMaxOrderSize({
-          subaccountOwner,
-          subaccountName,
-          productId,
-          price: toBigDecimal(price),
-          side,
-        });
-        return {
-          content: [
-            {
-              type: 'text',
-              text: toJsonContent({ maxOrderSize: maxSize }),
-            },
-          ],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_max_order_size',
-          `Failed to calculate max order size for product ${productId}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_max_order_size',
+        `Failed to calculate max order size for product ${productId}.`,
+        async () => {
+          const maxSize = await client.market.getMaxOrderSize({
+            subaccountOwner,
+            subaccountName,
+            productId,
+            price: toBigDecimal(price),
+            side,
+          });
+          return { maxOrderSize: maxSize };
+        },
+      ),
   );
 }

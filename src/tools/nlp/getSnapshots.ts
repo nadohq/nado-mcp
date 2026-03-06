@@ -2,8 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 
 export function registerGetNlpSnapshots(
   server: McpServer,
@@ -46,23 +45,16 @@ export function registerGetNlpSnapshots(
       granularity: number;
       limit: number;
       maxTimeInclusive?: number;
-    }) => {
-      try {
-        const snapshots = await client.context.indexerClient.getNlpSnapshots({
-          granularity,
-          limit,
-          maxTimeInclusive,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(snapshots) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_nlp_snapshots',
-          'Failed to fetch NLP vault snapshots.',
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_nlp_snapshots',
+        'Failed to fetch NLP vault snapshots.',
+        () =>
+          client.context.indexerClient.getNlpSnapshots({
+            granularity,
+            limit,
+            maxTimeInclusive,
+          }),
+      ),
   );
 }

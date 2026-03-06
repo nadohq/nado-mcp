@@ -2,8 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
 
 export function registerGetProductSnapshots(
@@ -49,25 +48,17 @@ export function registerGetProductSnapshots(
       limit: number;
       maxTimestampInclusive?: number;
       startCursor?: string;
-    }) => {
-      try {
-        const snapshots =
-          await client.context.indexerClient.getProductSnapshots({
+    }) =>
+      asyncResult(
+        'get_product_snapshots',
+        `Failed to fetch product snapshots for product ${productId}. Use get_all_markets to list valid product IDs.`,
+        () =>
+          client.context.indexerClient.getProductSnapshots({
             productId,
             limit,
             maxTimestampInclusive,
             startCursor,
-          });
-        return {
-          content: [{ type: 'text', text: toJsonContent(snapshots) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_product_snapshots',
-          `Failed to fetch product snapshots for product ${productId}. Use get_all_markets to list valid product IDs.`,
-          err,
-        );
-      }
-    },
+          }),
+      ),
   );
 }

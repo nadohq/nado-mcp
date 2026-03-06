@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   PaginationLimitSchema,
   ProductIdsSchema,
@@ -40,23 +39,16 @@ export function registerGetHistoricalOrders(
       subaccountName: string;
       productIds?: number[];
       limit: number;
-    }) => {
-      try {
-        const orders = await client.market.getHistoricalOrders({
-          subaccounts: [{ subaccountOwner, subaccountName }],
-          productIds,
-          limit,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(orders) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_historical_orders',
-          `Failed to fetch orders for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_historical_orders',
+        `Failed to fetch orders for ${subaccountOwner}/${subaccountName}.`,
+        () =>
+          client.market.getHistoricalOrders({
+            subaccounts: [{ subaccountOwner, subaccountName }],
+            productIds,
+            limit,
+          }),
+      ),
   );
 }

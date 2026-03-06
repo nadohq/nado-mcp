@@ -1,10 +1,16 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { NADO_DEPLOYMENTS, type ChainEnv } from '@nadohq/client';
+import {
+  ALL_CHAIN_ENVS,
+  NADO_DEPLOYMENTS,
+  type ChainEnv,
+} from '@nadohq/client';
 
 import { toJsonContent } from '../utils/formatting.js';
 
-const VALID_ENVS = new Set<string>(['inkMainnet', 'inkTestnet']);
+const VALID_ENVS = new Set<string>(
+  ALL_CHAIN_ENVS.filter((env) => env !== 'local'),
+);
 
 export function registerDeploymentsResource(server: McpServer): void {
   const template = new ResourceTemplate('nado://deployments/{chainEnv}', {

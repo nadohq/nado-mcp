@@ -2,8 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { asyncResult } from '../../utils/asyncResult.js';
 import {
   PaginationLimitSchema,
   ProductIdsSchema,
@@ -57,25 +56,18 @@ export function registerGetTriggerOrders(
       productIds?: number[];
       limit: number;
       activeOnly: boolean;
-    }) => {
-      try {
-        const orders = await client.market.getTriggerOrders({
-          subaccountOwner,
-          subaccountName,
-          productIds,
-          limit,
-          ...(activeOnly ? { statusTypes: [...ACTIVE_STATUSES] } : {}),
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(orders) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_trigger_orders',
-          `Failed to fetch trigger orders for ${subaccountOwner}/${subaccountName}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      asyncResult(
+        'get_trigger_orders',
+        `Failed to fetch trigger orders for ${subaccountOwner}/${subaccountName}.`,
+        () =>
+          client.market.getTriggerOrders({
+            subaccountOwner,
+            subaccountName,
+            productIds,
+            limit,
+            ...(activeOnly ? { statusTypes: [...ACTIVE_STATUSES] } : {}),
+          }),
+      ),
   );
 }
