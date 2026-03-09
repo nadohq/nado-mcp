@@ -2,14 +2,18 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
-  buildOrderParams,
-  resolveOrderParams,
+  DEFAULT_SLIPPAGE_PCT,
+  buildOrder,
   toExecutionType,
 } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { BalanceSideSchema, ProductIdSchema } from '../../utils/schemas.js';
+import {
+  type BalanceSide,
+  BalanceSideSchema,
+  ProductIdSchema,
+} from '../../utils/schemas.js';
 
 const MarginModeSchema = z
   .enum(['cross', 'isolated'])
@@ -61,9 +65,9 @@ export function registerPlaceOrder(
         slippagePct: z
           .number()
           .positive()
-          .default(2)
+          .default(DEFAULT_SLIPPAGE_PCT)
           .describe(
-            'Slippage tolerance percentage for market orders (default: 2%)',
+            `Slippage tolerance percentage for market orders (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
           ),
         spotLeverage: z
           .boolean()
@@ -94,7 +98,7 @@ export function registerPlaceOrder(
       borrowMargin,
     }: {
       productId: number;
-      side: 'long' | 'short';
+      side: BalanceSide;
       amount: number;
       price?: number;
       marginMode: 'cross' | 'isolated';
@@ -112,31 +116,20 @@ export function registerPlaceOrder(
         ? 'ioc'
         : toExecutionType(timeInForce);
 
-      const resolved = await resolveOrderParams(
-        ctx.client,
+      const orderParams = await buildOrder({
+        client: ctx.client,
         productId,
         side,
         amount,
         price,
         slippagePct,
-      );
-
-      const isolated =
-        marginMode === 'isolated' && leverage
-          ? { margin: Math.abs((amount * Number(resolved.price)) / leverage) }
-          : undefined;
-
-      const orderParams = buildOrderParams({
-        productId,
-        side,
-        amountX18: resolved.amountX18,
-        price: resolved.price,
         orderExecutionType: executionType,
         reduceOnly,
-        isolated,
+        marginMode,
+        leverage,
       });
 
-      return asyncResult(
+      return handleToolRequest(
         'place_order',
         `Failed to place ${side} order for product ${productId}`,
         () =>

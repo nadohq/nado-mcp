@@ -3,19 +3,30 @@ import {
   createNadoClient as createSdkClient,
   NadoClient,
 } from '@nadohq/client';
-import { createPublicClient, createWalletClient, http } from 'viem';
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  isAddress,
+  type Address,
+} from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 import type { ServerConfig } from './config.js';
+import type { DataEnv } from './dataEnv.js';
 
 export type { NadoClient };
 
 export interface NadoClientWithAccount {
   client: NadoClient;
-  subaccountOwner?: `0x${string}`;
+  dataEnv: DataEnv;
+  subaccountOwner?: Address;
   subaccountName: string;
   chainId: number;
 }
+
+export type NadoClientWithSigner = NadoClientWithAccount &
+  Required<Pick<NadoClientWithAccount, 'subaccountOwner'>>;
 
 export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
   const chain = CHAIN_ENV_TO_CHAIN[config.chainEnv];
@@ -23,7 +34,7 @@ export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
   const publicClient = createPublicClient({ transport: http(rpcUrl) });
 
   const account = config.privateKey
-    ? privateKeyToAccount(config.privateKey as `0x${string}`)
+    ? privateKeyToAccount(config.privateKey as Address)
     : undefined;
 
   const walletClient = account
@@ -39,9 +50,22 @@ export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
     walletClient,
   });
 
+  let subaccountOwner: Address | undefined;
+  if (config.subaccountOwner) {
+    if (!isAddress(config.subaccountOwner)) {
+      throw new Error(
+        `SUBACCOUNT_OWNER must be a valid Ethereum address. Got: ${config.subaccountOwner}`,
+      );
+    }
+    subaccountOwner = config.subaccountOwner;
+  } else if (account) {
+    subaccountOwner = account.address;
+  }
+
   return {
     client,
-    subaccountOwner: account?.address,
+    dataEnv: config.dataEnv,
+    subaccountOwner,
     subaccountName: config.subaccountName,
     chainId: chain.id,
   };

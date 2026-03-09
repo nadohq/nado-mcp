@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
 
 export function registerGetFundingRate(
@@ -20,7 +20,7 @@ export function registerGetFundingRate(
       annotations: { readOnlyHint: true },
     },
     async ({ productId }: { productId: number }) =>
-      asyncResult(
+      handleToolRequest(
         'get_funding_rate',
         `Failed to fetch funding rate for product ${productId}. Ensure this is a perp product ID.`,
         () => client.market.getFundingRate({ productId }),

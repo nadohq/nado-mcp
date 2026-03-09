@@ -1,8 +1,5 @@
-import type { NadoClientWithAccount } from '../client.js';
+import type { NadoClientWithAccount, NadoClientWithSigner } from '../client.js';
 import { ToolExecutionError } from './errors.js';
-
-type NadoClientWithSigner = NadoClientWithAccount &
-  Required<Pick<NadoClientWithAccount, 'subaccountOwner'>>;
 
 /**
  * Asserts that the client has a configured signer (PRIVATE_KEY).

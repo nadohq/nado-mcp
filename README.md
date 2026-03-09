@@ -15,7 +15,7 @@ bun install
 bun run build
 ```
 
-That's it — the built server is at `dist/index.js`. Configure environment variables (including `PRIVATE_KEY`) in your MCP client config (see below) — no `.env` file needed.
+That's it — the built server is at `dist/index.js`. Configure environment variables in your MCP client config (see below).
 
 ## MCP Client Setup
 
@@ -30,8 +30,9 @@ Add to your `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
       "command": "node",
       "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
       "env": {
-        "CHAIN_ENV": "inkMainnet",
-        "PRIVATE_KEY": "0xYOUR_PRIVATE_KEY"
+        "DATA_ENV": "nadoMainnet",
+        "PRIVATE_KEY": "0xLINKED_SIGNER_PRIVATE_KEY",
+        "SUBACCOUNT_OWNER": "0xMAIN_WALLET_ADDRESS"
       }
     }
   }
@@ -49,28 +50,127 @@ Add to your `claude_desktop_config.json`:
       "command": "node",
       "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
       "env": {
-        "CHAIN_ENV": "inkMainnet",
-        "PRIVATE_KEY": "0xYOUR_PRIVATE_KEY"
+        "DATA_ENV": "nadoMainnet",
+        "PRIVATE_KEY": "0xLINKED_SIGNER_PRIVATE_KEY",
+        "SUBACCOUNT_OWNER": "0xMAIN_WALLET_ADDRESS"
       }
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/nado-mcp` with the actual path where you cloned the repo. Set `CHAIN_ENV` to `inkTestnet` to connect to the [testnet](https://testnet.nado.xyz) instead.
+Replace `/absolute/path/to/nado-mcp` with the actual path where you cloned the repo. Set `DATA_ENV` to `nadoTestnet` to connect to the [testnet](https://testnet.nado.xyz) instead.
+
+## Security
+
+**Never put your main wallet private key in the MCP config.** The config file is stored in plain text on disk, readable by any process running as your user. If accidentally committed to version control, the key is permanently exposed.
+
+The server supports three operating modes, from most to least secure:
+
+### 1. Read-Only Mode (No Key)
+
+Omit `PRIVATE_KEY` entirely. All query tools work (market data, account info, history), but any tool that submits a transaction will return an error.
+
+```json
+{
+  "env": {
+    "DATA_ENV": "nadoMainnet"
+  }
+}
+```
+
+### 2. Linked Signer (Recommended for Mainnet)
+
+Use a **linked signer** — a disposable hot key that is authorized to sign transactions on behalf of your main wallet. Your main wallet key never touches the MCP config.
+
+#### How It Works
+
+Nado allows any subaccount to designate a **linked signer address**. Once linked, the engine accepts EIP-712 signatures from either the subaccount owner or the linked signer for off-chain operations (placing/cancelling orders, withdrawals, transfers).
+
+#### Setup
+
+**Step 1: Generate a hot key**
+
+```bash
+cast wallet new
+```
+
+This prints a new address and private key. Save both.
+
+**Step 2: Link the hot key to your subaccount**
+
+From your **main wallet**, authorize the hot key address. You can do this via:
+
+- The Nado frontend (Settings → Linked Signer)
+- The `link_signer` tool in this MCP server (requires the main key to be configured temporarily)
+- A direct contract call
+
+**Step 3: Configure the MCP server**
+
+```json
+{
+  "env": {
+    "DATA_ENV": "nadoMainnet",
+    "PRIVATE_KEY": "0xHOT_KEY_PRIVATE_KEY",
+    "SUBACCOUNT_OWNER": "0xMAIN_WALLET_ADDRESS"
+  }
+}
+```
+
+`PRIVATE_KEY` is the hot key (used for signing). `SUBACCOUNT_OWNER` is the main wallet (used to identify the subaccount for queries and order parameters).
+
+**Step 4 (if compromised): Revoke**
+
+From your main wallet, call `link_signer` with the zero address (`0x0000000000000000000000000000000000000000`). This immediately invalidates the hot key.
+
+#### What a Linked Signer Can Do
+
+- Place, cancel, and modify orders
+- Place trigger orders (stop-loss, take-profit, TWAP)
+- Withdraw collateral (off-chain signed via the engine)
+- Transfer between subaccounts
+
+#### What a Linked Signer Cannot Do
+
+- Deposit collateral (on-chain `msg.sender` must be the wallet holding the tokens)
+- Link or revoke signers (requires the subaccount owner's signature)
+- Any on-chain transaction that checks `msg.sender`
+
+#### Limitations
+
+- **No permission scoping**: a linked signer has full access to all off-chain operations, including withdrawals. The security boundary is **revocability**, not restriction. If the key leaks, act fast to revoke it.
+- **One signer per subaccount**: each subaccount can have at most one linked signer. Linking a new address replaces the previous one.
+- **Rate limits**: linked signers may have separate rate limits from the subaccount owner.
+
+### 3. Direct Key (Testnet / Dev Only)
+
+For testnet or local development, you can use your wallet key directly. Omit `SUBACCOUNT_OWNER` and the server derives it from `PRIVATE_KEY`:
+
+```json
+{
+  "env": {
+    "DATA_ENV": "nadoTestnet",
+    "PRIVATE_KEY": "0xYOUR_PRIVATE_KEY"
+  }
+}
+```
+
+**Do not use this on mainnet with real funds.** The key is stored in plain text and any process on your machine can read it.
 
 ## Environment Variables
 
-Set these in the `"env"` block of your MCP client config (recommended). A `.env` file can be used as a fallback for local development:
+Set these in the `"env"` block of your MCP client config (recommended). A `.env` file can be used as a fallback for local development.
 
-| Variable          | Required | Default       | Description                                      |
-| ----------------- | -------- | ------------- | ------------------------------------------------ |
-| `CHAIN_ENV`       | Yes      | —             | `inkMainnet` ([app.nado.xyz](https://app.nado.xyz)) or `inkTestnet` ([testnet.nado.xyz](https://testnet.nado.xyz)) |
-| `RPC_URL`         | No       | Chain default | Custom RPC URL                                   |
-| `PRIVATE_KEY`     | No       | —             | Private key for write operations                 |
-| `SUBACCOUNT_NAME` | No       | `default`     | Default subaccount name                          |
+| Variable           | Required | Default       | Description                                      |
+| ------------------ | -------- | ------------- | ------------------------------------------------ |
+| `DATA_ENV`         | Yes*     | —             | `nadoMainnet` or `nadoTestnet`                   |
+| `CHAIN_ENV`        | No       | Auto          | Override chain within the data env (e.g. `inkMainnet`). Accepted alone for backwards compatibility. |
+| `RPC_URL`          | No       | Chain default | Custom RPC URL                                   |
+| `PRIVATE_KEY`      | No       | —             | Private key for signing (linked signer recommended) |
+| `SUBACCOUNT_OWNER` | No       | —             | Main wallet address (required when using a linked signer) |
+| `SUBACCOUNT_NAME`  | No       | `default`     | Default subaccount name                          |
 
-When `PRIVATE_KEY` is not set, the server runs in **read-only mode**.
+\* Either `DATA_ENV` or `CHAIN_ENV` must be set. `DATA_ENV` is preferred.
 
 ## Development
 

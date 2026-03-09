@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,7 +30,7 @@ export function registerGetNlpMaxMintBurn(
       subaccountOwner: string;
       subaccountName: string;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_nlp_max_mint_burn',
         `Failed to fetch NLP mint/burn limits for ${subaccountOwner}/${subaccountName}.`,
         async () => {

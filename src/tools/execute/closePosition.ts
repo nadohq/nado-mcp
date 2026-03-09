@@ -1,14 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ProductEngineType } from '@nadohq/client';
-import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
-import {
-  buildOrderParams,
-  resolveOrderParams,
-} from '../../utils/orderBuilder.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
 
@@ -31,8 +27,10 @@ export function registerClosePosition(
         slippagePct: z
           .number()
           .positive()
-          .default(2)
-          .describe('Slippage tolerance percentage (default: 2%)'),
+          .default(DEFAULT_SLIPPAGE_PCT)
+          .describe(
+            `Slippage tolerance percentage (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
+          ),
       },
       annotations: { readOnlyHint: false },
     },
@@ -60,7 +58,7 @@ export function registerClosePosition(
         );
       }
 
-      const positionAmount = new BigNumber(balance.amount.toString());
+      const positionAmount = balance.amount;
       if (positionAmount.isZero()) {
         throw new Error(
           `Position for product ${productId} has zero size. Nothing to close.`,
@@ -71,25 +69,17 @@ export function registerClosePosition(
       const closeSide = isLong ? 'short' : 'long';
       const absAmount = positionAmount.abs().toNumber();
 
-      const resolved = await resolveOrderParams(
-        ctx.client,
-        productId,
-        closeSide,
-        absAmount,
-        undefined,
-        slippagePct,
-      );
-
-      const orderParams = buildOrderParams({
+      const orderParams = await buildOrder({
+        client: ctx.client,
         productId,
         side: closeSide,
-        amountX18: resolved.amountX18,
-        price: resolved.price,
+        amount: absAmount,
+        slippagePct,
         orderExecutionType: 'ioc',
         reduceOnly: true,
       });
 
-      return asyncResult(
+      return handleToolRequest(
         'close_position',
         `Failed to close position for product ${productId}`,
         async () => {

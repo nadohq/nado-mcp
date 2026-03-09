@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   ProductIdSchema,
   SubaccountNameSchema,
@@ -36,7 +36,7 @@ export function registerGetMaxWithdrawable(
       subaccountName: string;
       productId: number;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_max_withdrawable',
         `Failed to fetch max withdrawable for product ${productId}. Ensure this is a spot product ID.`,
         async () => {

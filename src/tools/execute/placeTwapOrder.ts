@@ -1,15 +1,20 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toBigDecimal } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
-  buildTwapOrderParams,
+  DEFAULT_SLIPPAGE_PCT,
+  buildOrder,
   calculateTwapExpiration,
-  resolveOrderParams,
 } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { BalanceSideSchema, ProductIdSchema } from '../../utils/schemas.js';
+import {
+  type BalanceSide,
+  BalanceSideSchema,
+  ProductIdSchema,
+} from '../../utils/schemas.js';
 
 export function registerPlaceTwapOrder(
   server: McpServer,
@@ -20,9 +25,9 @@ export function registerPlaceTwapOrder(
     {
       title: 'Place TWAP Order',
       description:
-        'Place a TWAP (Time-Weighted Average Price) order that splits a total amount into equal slices executed at regular intervals. ' +
+        'Place a TWAP (Time-Weighted Average Price) order that splits a total amount into equal orders executed at regular intervals. ' +
         'Uses cross margin only (TWAP cannot use isolated margin). ' +
-        'Each slice is executed as an IOC market order with oracle-based slippage protection.',
+        'Each order is executed as an IOC market order with oracle-based slippage protection.',
       inputSchema: {
         productId: ProductIdSchema,
         side: BalanceSideSchema,
@@ -30,14 +35,14 @@ export function registerPlaceTwapOrder(
           .number()
           .positive()
           .describe(
-            'Notional USD value per TWAP slice (e.g. 50 for $50 per slice)',
+            'Notional USD value per TWAP order (e.g. 50 for $50 per order)',
           ),
         intervalSeconds: z
           .number()
           .int()
           .positive()
           .default(30)
-          .describe('Seconds between each slice (default: 30)'),
+          .describe('Seconds between each order (default: 30)'),
         durationMinutes: z
           .number()
           .positive()
@@ -45,9 +50,9 @@ export function registerPlaceTwapOrder(
         slippagePct: z
           .number()
           .positive()
-          .default(2)
+          .default(DEFAULT_SLIPPAGE_PCT)
           .describe(
-            'Max slippage per slice as percentage, based on oracle price at execution time (default: 2%)',
+            `Max slippage per order as percentage, based on oracle price at execution time (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
           ),
         reduceOnly: z
           .boolean()
@@ -66,7 +71,7 @@ export function registerPlaceTwapOrder(
       reduceOnly,
     }: {
       productId: number;
-      side: 'long' | 'short';
+      side: BalanceSide;
       amountPerOrder: number;
       intervalSeconds: number;
       durationMinutes: number;
@@ -78,44 +83,36 @@ export function registerPlaceTwapOrder(
       const numOrders = Math.floor((durationMinutes * 60) / intervalSeconds);
       if (numOrders < 2) {
         throw new Error(
-          `TWAP requires at least 2 slices. Duration ${durationMinutes}min / interval ${intervalSeconds}s = ${numOrders} slices.`,
+          `TWAP requires at least 2 orders. Duration ${durationMinutes}min / interval ${intervalSeconds}s = ${numOrders} orders.`,
         );
       }
 
-      const totalNotional = amountPerOrder * numOrders;
+      const totalNotional = toBigDecimal(amountPerOrder).times(numOrders);
 
       const marketPrice = await ctx.client.market.getLatestMarketPrice({
         productId,
       });
-      const refPrice =
-        side === 'long' ? Number(marketPrice.ask) : Number(marketPrice.bid);
-      if (refPrice <= 0) {
+      const refPrice = side === 'long' ? marketPrice.ask : marketPrice.bid;
+      if (refPrice.lte(0)) {
         throw new Error(
           `No ${side === 'long' ? 'ask' : 'bid'} price available for product ${productId}.`,
         );
       }
 
-      const totalAmount = totalNotional / refPrice;
-
-      const resolved = await resolveOrderParams(
-        ctx.client,
-        productId,
-        side,
-        totalAmount,
-        undefined,
-        slippagePct,
-      );
+      const totalAmount = totalNotional.dividedBy(refPrice).toNumber();
 
       const expirationSecs = calculateTwapExpiration(
         numOrders,
         intervalSeconds,
       );
 
-      const twapParams = buildTwapOrderParams({
+      const twapParams = await buildOrder({
+        client: ctx.client,
         productId,
         side,
-        amountX18: resolved.amountX18,
-        price: resolved.price,
+        amount: totalAmount,
+        slippagePct,
+        orderExecutionType: 'ioc',
         reduceOnly,
         twap: {
           numOrders,
@@ -124,7 +121,7 @@ export function registerPlaceTwapOrder(
         expirationSecs,
       });
 
-      return asyncResult(
+      return handleToolRequest(
         'place_twap_order',
         `Failed to place TWAP ${side} order for product ${productId}`,
         async () => {
@@ -152,13 +149,13 @@ export function registerPlaceTwapOrder(
             summary: {
               side,
               productId,
-              totalNotional: `$${totalNotional.toFixed(2)}`,
-              amountPerSlice: `$${amountPerOrder.toFixed(2)}`,
+              totalNotional: totalNotional.toFixed(2),
+              amountPerOrder: toBigDecimal(amountPerOrder).toFixed(2),
               numOrders,
               intervalSeconds,
               totalDuration: `${durationMinutes} minutes`,
               slippagePct: `${slippagePct}%`,
-              referencePrice: refPrice,
+              referencePrice: refPrice.toFixed(),
             },
           };
         },

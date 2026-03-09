@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   PaginationLimitSchema,
   ProductIdsSchema,
@@ -57,7 +57,7 @@ export function registerGetTriggerOrders(
       limit: number;
       activeOnly: boolean;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_trigger_orders',
         `Failed to fetch trigger orders for ${subaccountOwner}/${subaccountName}.`,
         () =>

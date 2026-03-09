@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -16,7 +16,7 @@ export function registerGetSubaccountSummary(
     {
       title: 'Get Subaccount Summary',
       description:
-        'Get a full summary of a subaccount including balances, health, and margin state from the off-chain engine. This is the primary tool for checking account status. Use this first when investigating a portfolio, then follow up with get_isolated_positions for per-position details, get_open_orders for pending orders, or get_trigger_orders for stop-loss/TP orders.',
+        'Get a full summary of a subaccount including balances, health, and margin state from the off-chain engine. This is the primary tool for checking account status. Use this first when investigating a portfolio, then follow up with get_isolated_positions for per-position details, get_open_orders for pending orders, or get_trigger_orders for TP/SL orders.',
       inputSchema: {
         subaccountOwner: SubaccountOwnerSchema,
         subaccountName: SubaccountNameSchema,
@@ -30,7 +30,7 @@ export function registerGetSubaccountSummary(
       subaccountOwner: string;
       subaccountName: string;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_subaccount_summary',
         `Failed to fetch summary for ${subaccountOwner}/${subaccountName}.`,
         () =>

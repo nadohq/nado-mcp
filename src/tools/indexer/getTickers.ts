@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 
 export function registerGetTickers(
   server: McpServer,
@@ -23,7 +23,7 @@ export function registerGetTickers(
       annotations: { readOnlyHint: true },
     },
     async ({ market }: { market?: 'spot' | 'perp' }) =>
-      asyncResult('get_tickers', 'Failed to fetch tickers.', () =>
+      handleToolRequest('get_tickers', 'Failed to fetch tickers.', () =>
         client.context.indexerClient.getV2Tickers({ market }),
       ),
   );

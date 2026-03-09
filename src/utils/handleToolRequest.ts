@@ -5,7 +5,7 @@ import { toJsonContent } from './formatting.js';
  * Wraps an async tool handler: serializes the result to JSON on success,
  * or throws a {@link ToolExecutionError} on failure.
  */
-export async function asyncResult<T>(
+export async function handleToolRequest<T>(
   toolName: string,
   errorMessage: string,
   fn: () => Promise<T>,

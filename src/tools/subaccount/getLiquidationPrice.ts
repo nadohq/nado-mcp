@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { ToolExecutionError } from '../../utils/errors.js';
 import { toJsonContent } from '../../utils/formatting.js';
 import {
+  type BalanceSide,
   BalanceSideSchema,
   ProductIdSchema,
   SubaccountNameSchema,
@@ -21,7 +22,7 @@ import {
 
 interface LiquidationPriceResult {
   productId: number;
-  side: 'long' | 'short';
+  side: BalanceSide;
   amount: string;
   oraclePrice: string;
   liquidationPrice: string | null;
@@ -113,7 +114,7 @@ export function registerGetLiquidationPrice(
       subaccountOwner: string;
       subaccountName: string;
       productId?: number;
-      side?: 'long' | 'short';
+      side?: BalanceSide;
       amount?: number;
       price?: number;
     }) => {

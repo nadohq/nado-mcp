@@ -1,8 +1,6 @@
-import { ALL_CHAIN_ENVS, CandlestickPeriod } from '@nadohq/client';
-import { isAddress } from 'viem';
+import { CandlestickPeriod } from '@nadohq/client';
+import { isAddress, toBytes } from 'viem';
 import { z } from 'zod';
-
-export const ChainEnvSchema = z.enum(ALL_CHAIN_ENVS);
 
 export const ProductIdSchema = z
   .number()
@@ -25,7 +23,7 @@ export const SubaccountNameSchema = z
   .string()
   .default('default')
   .refine(
-    (v) => new TextEncoder().encode(v).length <= MAX_SUBACCOUNT_NAME_BYTES,
+    (v) => toBytes(v).length <= MAX_SUBACCOUNT_NAME_BYTES,
     `Subaccount name must be at most ${MAX_SUBACCOUNT_NAME_BYTES} bytes`,
   )
   .describe('Subaccount name (max 12 bytes, defaults to "default")');
@@ -33,6 +31,8 @@ export const SubaccountNameSchema = z
 export const BalanceSideSchema = z
   .enum(['long', 'short'])
   .describe('Order side: long (buy) or short (sell)');
+
+export type BalanceSide = z.infer<typeof BalanceSideSchema>;
 
 const CANDLESTICK_PERIODS = Object.values(CandlestickPeriod).filter(
   (v): v is number => typeof v === 'number',

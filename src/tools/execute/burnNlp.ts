@@ -3,7 +3,7 @@ import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 
 export function registerBurnNlp(
@@ -29,7 +29,7 @@ export function registerBurnNlp(
     async ({ nlpAmount }: { nlpAmount: number }) => {
       requireSigner('burn_nlp', ctx);
 
-      return asyncResult(
+      return handleToolRequest(
         'burn_nlp',
         `Failed to burn ${nlpAmount} NLP. Use get_nlp_locked_balances to check unlocked balance.`,
         () =>

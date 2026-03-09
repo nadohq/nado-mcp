@@ -88,5 +88,60 @@ The **Nado Liquidity Provider (NLP) vault** is a protocol-owned liquidity pool t
 
 ### Analyze vault performance
 
-1. `get_nlp_pool_info` -- current vault state
+1. `get_nlp_pool_info` -- current vault state (raw sub-pool data)
 2. `get_nlp_snapshots` -- historical vault metrics
+3. `get_multi_subaccount_snapshots` -- historical snapshots for pool subaccounts (use `subaccountHex` from pool info)
+
+## Computing Derived Fields
+
+Many useful metrics are not returned directly by tools but can be computed from raw data. All amounts from the engine are in **x18** format (multiplied by 10^18). Use `removeDecimals` (divide by 10^18) to convert to human-readable units.
+
+### Entry Price (Perp Positions)
+
+Available from subaccount snapshots (`get_multi_subaccount_snapshots`). Each balance has `trackedVars.netEntryUnrealized`.
+
+```
+entryPrice = abs(netEntryUnrealized / amount)
+```
+
+Where `amount` is the signed position size in x18.
+
+### Estimated Unrealized PnL (Perp Positions)
+
+```
+unrealizedPnl = removeDecimals(amount * oraclePrice - netEntryUnrealized)
+```
+
+- `amount`: signed position size (positive for long, negative for short) in x18
+- `oraclePrice`: current oracle price from the balance data
+- `netEntryUnrealized`: from subaccount snapshot `trackedVars`
+
+### Net Funding (Perp Positions)
+
+Available from subaccount snapshots via `trackedVars.netFundingUnrealized`:
+
+```
+netFunding = removeDecimals(netFundingUnrealized)
+```
+
+Positive means funding received, negative means funding paid.
+
+### Notional Value
+
+```
+notionalValue = abs(removeDecimals(amount)) * oraclePrice
+```
+
+### Position Side
+
+```
+side = amount > 0 ? "long" : "short"
+```
+
+### NLP Vault Aggregation
+
+`get_nlp_pool_info` returns individual sub-pools, each with their own positions and orders. To get a unified vault view, aggregate across all pools:
+
+- **Total position per product**: sum `amount` across all pools for each `productId`
+- **Total open orders**: collect `openOrders` from all pools
+- **Vault health**: check each pool's `subaccountInfo.health` (initial, maintenance, unweighted)

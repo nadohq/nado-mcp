@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { PaginationLimitSchema } from '../../utils/schemas.js';
 
 export function registerListSubaccounts(
@@ -28,7 +28,7 @@ export function registerListSubaccounts(
       annotations: { readOnlyHint: true },
     },
     async ({ address, limit }: { address?: string; limit: number }) =>
-      asyncResult(
+      handleToolRequest(
         'list_subaccounts',
         `Failed to list subaccounts${address ? ` for ${address}` : ''}.`,
         () =>

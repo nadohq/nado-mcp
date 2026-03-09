@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   PaginationLimitSchema,
   ProductIdsSchema,
@@ -38,7 +38,7 @@ export function registerGetFundingPayments(
       productIds: number[];
       limit: number;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_funding_payments',
         `Failed to fetch funding payments for ${subaccountOwner}/${subaccountName}.`,
         () =>

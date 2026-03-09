@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { ProductIdsSchema } from '../../utils/schemas.js';
 
 export function registerGetMarketSnapshots(
@@ -52,7 +52,7 @@ export function registerGetMarketSnapshots(
       productIds?: number[];
       maxTimeInclusive?: number;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_market_snapshots',
         'Failed to fetch market snapshots.',
         () =>

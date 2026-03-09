@@ -2,14 +2,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
-  buildOrderParams,
-  resolveOrderParams,
+  DEFAULT_SLIPPAGE_PCT,
+  buildOrder,
   toExecutionType,
 } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import {
+  type BalanceSide,
   BalanceSideSchema,
   ProductIdSchema,
   ProductIdsSchema,
@@ -75,9 +76,9 @@ export function registerCancelAndPlace(
         slippagePct: z
           .number()
           .positive()
-          .default(2)
+          .default(DEFAULT_SLIPPAGE_PCT)
           .describe(
-            'Slippage tolerance percentage for market orders (default: 2%)',
+            `Slippage tolerance percentage for market orders (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
           ),
       },
       annotations: { readOnlyHint: false },
@@ -98,7 +99,7 @@ export function registerCancelAndPlace(
       cancelProductIds: number[];
       cancelDigests: string[];
       productId: number;
-      side: 'long' | 'short';
+      side: BalanceSide;
       amount: number;
       price?: number;
       marginMode: 'cross' | 'isolated';
@@ -114,31 +115,20 @@ export function registerCancelAndPlace(
         ? 'ioc'
         : toExecutionType(timeInForce);
 
-      const resolved = await resolveOrderParams(
-        ctx.client,
+      const orderParams = await buildOrder({
+        client: ctx.client,
         productId,
         side,
         amount,
         price,
         slippagePct,
-      );
-
-      const isolated =
-        marginMode === 'isolated' && leverage
-          ? { margin: Math.abs((amount * Number(resolved.price)) / leverage) }
-          : undefined;
-
-      const orderParams = buildOrderParams({
-        productId,
-        side,
-        amountX18: resolved.amountX18,
-        price: resolved.price,
         orderExecutionType: executionType,
         reduceOnly,
-        isolated,
+        marginMode,
+        leverage,
       });
 
-      return asyncResult(
+      return handleToolRequest(
         'cancel_and_place',
         'Failed to cancel and place order. Verify the cancel digests are valid using get_open_orders.',
         () =>

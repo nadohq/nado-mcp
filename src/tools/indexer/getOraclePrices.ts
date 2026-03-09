@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { fmtProductIds } from '../../utils/formatting.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { ProductIdsSchema } from '../../utils/schemas.js';
 
 export function registerGetOraclePrices(
@@ -20,9 +21,9 @@ export function registerGetOraclePrices(
       annotations: { readOnlyHint: true },
     },
     async ({ productIds }: { productIds: number[] }) =>
-      asyncResult(
+      handleToolRequest(
         'get_oracle_prices',
-        `Failed to fetch oracle prices for products [${productIds.join(', ')}]. Use get_all_markets to list valid product IDs.`,
+        `Failed to fetch oracle prices for products ${fmtProductIds(productIds)}. Use get_all_markets to list valid product IDs.`,
         () => client.context.indexerClient.getOraclePrices({ productIds }),
       ),
   );

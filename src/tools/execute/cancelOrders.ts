@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { ProductIdsSchema } from '../../utils/schemas.js';
 
@@ -35,7 +35,7 @@ export function registerCancelOrders(
     }) => {
       requireSigner('cancel_orders', ctx);
 
-      return asyncResult(
+      return handleToolRequest(
         'cancel_orders',
         `Failed to cancel orders. Verify the digests are valid using get_open_orders.`,
         () =>

@@ -3,7 +3,7 @@ import { isAddress } from 'viem';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 
 export function registerLinkSigner(
@@ -30,7 +30,7 @@ export function registerLinkSigner(
     async ({ signer }: { signer: string }) => {
       requireSigner('link_signer', ctx);
 
-      return asyncResult(
+      return handleToolRequest(
         'link_signer',
         `Failed to link signer ${signer} to subaccount.`,
         () =>

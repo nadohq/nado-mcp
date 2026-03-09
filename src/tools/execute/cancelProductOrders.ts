@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { fmtProductIds } from '../../utils/formatting.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { ProductIdsSchema } from '../../utils/schemas.js';
 
@@ -25,9 +26,9 @@ export function registerCancelProductOrders(
     async ({ productIds }: { productIds: number[] }) => {
       requireSigner('cancel_product_orders', ctx);
 
-      return asyncResult(
+      return handleToolRequest(
         'cancel_product_orders',
-        `Failed to cancel orders for products [${productIds.join(', ')}]. Use get_all_markets to verify product IDs.`,
+        `Failed to cancel orders for products ${fmtProductIds(productIds)}. Use get_all_markets to verify product IDs.`,
         () =>
           ctx.client.market.cancelProductOrders({
             subaccountOwner: ctx.subaccountOwner,

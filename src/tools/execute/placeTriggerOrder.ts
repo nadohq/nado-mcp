@@ -2,13 +2,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
-import {
-  buildOrderParams,
-  resolveOrderParams,
-} from '../../utils/orderBuilder.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { BalanceSideSchema, ProductIdSchema } from '../../utils/schemas.js';
+import {
+  type BalanceSide,
+  BalanceSideSchema,
+  ProductIdSchema,
+} from '../../utils/schemas.js';
 
 const TriggerTypeSchema = z
   .enum([
@@ -76,9 +77,9 @@ export function registerPlaceTriggerOrder(
         slippagePct: z
           .number()
           .positive()
-          .default(2)
+          .default(DEFAULT_SLIPPAGE_PCT)
           .describe(
-            'Slippage tolerance percentage for stop-market orders (default: 2%)',
+            `Slippage tolerance percentage for stop-market orders (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
           ),
         borrowMargin: z
           .boolean()
@@ -103,7 +104,7 @@ export function registerPlaceTriggerOrder(
       borrowMargin,
     }: {
       productId: number;
-      side: 'long' | 'short';
+      side: BalanceSide;
       amount: number;
       price?: number;
       triggerPrice: number;
@@ -116,33 +117,22 @@ export function registerPlaceTriggerOrder(
     }) => {
       requireSigner('place_trigger_order', ctx);
 
-      const resolved = await resolveOrderParams(
-        ctx.client,
+      const executionType = price == null ? 'ioc' : 'default';
+
+      const orderParams = await buildOrder({
+        client: ctx.client,
         productId,
         side,
         amount,
         price,
         slippagePct,
-      );
-
-      const isolated =
-        marginMode === 'isolated' && leverage
-          ? { margin: Math.abs((amount * Number(resolved.price)) / leverage) }
-          : undefined;
-
-      const executionType = price == null ? 'ioc' : 'default';
-
-      const orderParams = buildOrderParams({
-        productId,
-        side,
-        amountX18: resolved.amountX18,
-        price: resolved.price,
         orderExecutionType: executionType,
         reduceOnly,
-        isolated,
+        marginMode,
+        leverage,
       });
 
-      return asyncResult(
+      return handleToolRequest(
         'place_trigger_order',
         `Failed to place trigger ${side} order for product ${productId}`,
         () =>

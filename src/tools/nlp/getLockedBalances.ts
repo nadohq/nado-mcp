@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,7 +30,7 @@ export function registerGetNlpLockedBalances(
       subaccountOwner: string;
       subaccountName: string;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_nlp_locked_balances',
         `Failed to fetch NLP locked balances for ${subaccountOwner}/${subaccountName}.`,
         () =>

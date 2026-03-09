@@ -3,7 +3,7 @@ import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
 
@@ -38,7 +38,7 @@ export function registerDepositCollateral(
 
       const amountX18 = addDecimals(amount);
 
-      return asyncResult(
+      return handleToolRequest(
         'deposit_collateral',
         `Failed to deposit ${amount} of product ${productId}. Ensure the wallet has sufficient token balance and native token for gas.`,
         async () => {

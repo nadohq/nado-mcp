@@ -3,7 +3,7 @@ import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
 
@@ -49,7 +49,7 @@ export function registerWithdrawCollateral(
     }) => {
       requireSigner('withdraw_collateral', ctx);
 
-      return asyncResult(
+      return handleToolRequest(
         'withdraw_collateral',
         `Failed to withdraw ${amount} of product ${productId}. Use get_max_withdrawable to check available amount.`,
         () =>

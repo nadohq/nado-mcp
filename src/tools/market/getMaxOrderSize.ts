@@ -3,8 +3,9 @@ import type { NadoClient } from '@nadohq/client';
 import { toBigDecimal } from '@nadohq/client';
 import { z } from 'zod';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
+  type BalanceSide,
   BalanceSideSchema,
   ProductIdSchema,
   SubaccountNameSchema,
@@ -41,9 +42,9 @@ export function registerGetMaxOrderSize(
       subaccountName: string;
       productId: number;
       price: number;
-      side: 'long' | 'short';
+      side: BalanceSide;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_max_order_size',
         `Failed to calculate max order size for product ${productId}.`,
         async () => {

@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -30,7 +30,7 @@ export function registerGetFeeRates(
       subaccountOwner: string;
       subaccountName: string;
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_fee_rates',
         `Failed to fetch fee rates for ${subaccountOwner}/${subaccountName}.`,
         () =>

@@ -1,119 +1,113 @@
-import { ProductEngineType, type ChainEnv } from '@nadohq/client';
+import { ProductEngineType } from '@nadohq/client';
+import Fuse from 'fuse.js';
 
-const METADATA_URL = 'https://app.nado.xyz/api/product-metadata';
+import { type DataEnv, getDataEnvConfig, getMetadataUrl } from '../dataEnv.js';
 
-export interface ResolvedMarket {
-  productId: number;
-  symbol: string;
-  type: ProductEngineType;
-}
-
-interface ProductMetadataEntry {
+interface PerpMetadata {
   marketName: string;
   symbol: string;
+  icon: { asset: string };
   altSearchTerms: string[];
   quoteProductId: number;
   marketCategories: string[];
 }
 
-interface EnvMetadata {
-  perp: Record<string, ProductMetadataEntry>;
-  spot: Record<string, ProductMetadataEntry>;
+interface SpotMetadata {
+  token: {
+    address: string;
+    chainId: number;
+    tokenDecimals: number;
+    symbol: string;
+    icon: { asset: string };
+  };
+  quoteProductId: number;
+  marketName: string;
+  altSearchTerms: string[];
+  marketCategories: string[];
 }
 
-interface SearchEntry {
+interface EnvMetadata {
+  perp: Record<string, PerpMetadata>;
+  spot: Record<string, SpotMetadata>;
+}
+
+export interface Market {
   productId: number;
   symbol: string;
   type: ProductEngineType;
-  terms: string[];
 }
 
-let cached: Record<string, EnvMetadata> | null = null;
+const cache = new Map<DataEnv, Market[]>();
 
-async function fetchMetadata(): Promise<Record<string, EnvMetadata>> {
-  if (cached) return cached;
-  const res = await fetch(METADATA_URL);
+async function getMarkets(dataEnv: DataEnv): Promise<Market[]> {
+  const existing = cache.get(dataEnv);
+  if (existing) return existing;
+
+  const url = getMetadataUrl(dataEnv);
+  const res = await fetch(url);
   if (!res.ok) {
     throw new Error(
-      `Failed to fetch product metadata: ${res.status} ${res.statusText}`,
+      `Failed to fetch product metadata from ${url}: ${res.status} ${res.statusText}`,
     );
   }
-  cached = (await res.json()) as Record<string, EnvMetadata>;
-  return cached;
-}
 
-function buildSearchEntries(env: EnvMetadata): SearchEntry[] {
-  const entries: SearchEntry[] = [];
+  const allEnvs = (await res.json()) as Record<string, EnvMetadata>;
+  const { chainEnvs } = getDataEnvConfig(dataEnv);
+  const chainEnv = chainEnvs.find((ce) => allEnvs[ce]);
+  if (!chainEnv) {
+    throw new Error(`No product metadata found for data env: ${dataEnv}`);
+  }
+
+  const env = allEnvs[chainEnv];
+  const markets: Market[] = [];
 
   for (const [id, entry] of Object.entries(env.perp)) {
-    entries.push({
+    markets.push({
       productId: Number(id),
       symbol: entry.symbol,
       type: ProductEngineType.PERP,
-      terms: [entry.symbol, ...entry.altSearchTerms].map((s) =>
-        s.toLowerCase(),
-      ),
     });
   }
 
   for (const [id, entry] of Object.entries(env.spot)) {
-    entries.push({
+    markets.push({
       productId: Number(id),
-      symbol: entry.symbol,
+      symbol: entry.token?.symbol ?? entry.marketName,
       type: ProductEngineType.SPOT,
-      terms: [entry.symbol, ...entry.altSearchTerms].map((s) =>
-        s.toLowerCase(),
-      ),
     });
   }
 
-  return entries;
+  cache.set(dataEnv, markets);
+  return markets;
 }
 
 /**
  * Resolves a human-readable market query (e.g. "bitcoin", "eth", "SOL")
- * to a concrete product using the web API's search terms.
+ * to a concrete product via fuzzy search.
  * Prefers perp markets over spot when ambiguous.
  */
 export async function resolveMarket(
-  chainEnv: ChainEnv,
+  dataEnv: DataEnv,
   query: string,
-): Promise<ResolvedMarket> {
-  const metadata = await fetchMetadata();
-  const env = metadata[chainEnv];
-  if (!env) {
-    throw new Error(`No product metadata for chain env: ${chainEnv}`);
+): Promise<Market> {
+  const markets = await getMarkets(dataEnv);
+
+  const fuse = new Fuse(markets, {
+    keys: ['symbol'],
+    threshold: 0.4,
+  });
+
+  const results = fuse.search(query);
+  if (results.length === 0) {
+    const available = markets
+      .filter((m) => m.type === ProductEngineType.PERP)
+      .map((m) => m.symbol)
+      .join(', ');
+    throw new Error(
+      `Could not find a market matching "${query}". Available perp symbols: ${available}`,
+    );
   }
 
-  const entries = buildSearchEntries(env);
-  const normalized = query.trim().toLowerCase();
-
-  // 1) Exact match on symbol or search term
-  const exact = entries.find((e) => e.terms.includes(normalized));
-  if (exact) return pick(exact);
-
-  // 2) Substring match — prefer perps over spot
-  const substring = entries.filter((e) =>
-    e.terms.some((t) => t.includes(normalized) || normalized.includes(t)),
-  );
-  if (substring.length > 0) {
-    const perp = substring.find((e) => e.type === ProductEngineType.PERP);
-    return pick(perp ?? substring[0]);
-  }
-
-  const available = entries
-    .filter((e) => e.type === ProductEngineType.PERP)
-    .map((e) => e.symbol)
-    .join(', ');
-  throw new Error(
-    `Could not find a market matching "${query}". Available perp symbols: ${available}`,
-  );
-}
-
-function pick(entry: SearchEntry): ResolvedMarket {
-  return {
-    productId: entry.productId,
-    symbol: entry.symbol,
-    type: entry.type,
-  };
+  const perp = results.find((r) => r.item.type === ProductEngineType.PERP);
+  return (perp ?? results[0]).item;
 }

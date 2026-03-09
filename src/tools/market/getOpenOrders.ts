@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   ProductIdsSchema,
   SubaccountNameSchema,
@@ -36,7 +36,7 @@ export function registerGetOpenOrders(
       subaccountName: string;
       productIds: number[];
     }) =>
-      asyncResult(
+      handleToolRequest(
         'get_open_orders',
         `Failed to fetch open orders for ${subaccountOwner}/${subaccountName}. Use get_all_markets to list valid product IDs.`,
         () =>

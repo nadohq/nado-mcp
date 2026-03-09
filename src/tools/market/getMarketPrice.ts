@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
 
 export function registerGetMarketPrice(
@@ -21,7 +21,7 @@ export function registerGetMarketPrice(
       annotations: { readOnlyHint: true },
     },
     async ({ productId }: { productId: z.infer<typeof ProductIdSchema> }) =>
-      asyncResult(
+      handleToolRequest(
         'get_market_price',
         `Failed to fetch price for product ${productId}. Use get_all_markets to list valid product IDs.`,
         () => client.market.getLatestMarketPrice({ productId }),

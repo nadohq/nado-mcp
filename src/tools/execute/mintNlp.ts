@@ -3,7 +3,7 @@ import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 
 export function registerMintNlp(
@@ -43,7 +43,7 @@ export function registerMintNlp(
     }) => {
       requireSigner('mint_nlp', ctx);
 
-      return asyncResult(
+      return handleToolRequest(
         'mint_nlp',
         `Failed to mint NLP with ${quoteAmount} USDT0. Use get_nlp_max_mint_burn to check limits.`,
         () =>

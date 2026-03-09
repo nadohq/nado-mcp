@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { asyncResult } from '../../utils/asyncResult.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
 
 export function registerGetMarketLiquidity(
@@ -26,7 +26,7 @@ export function registerGetMarketLiquidity(
       annotations: { readOnlyHint: true },
     },
     async ({ productId, depth }: { productId: number; depth: number }) =>
-      asyncResult(
+      handleToolRequest(
         'get_market_liquidity',
         `Failed to fetch liquidity for product ${productId}.`,
         () => client.market.getMarketLiquidity({ productId, depth }),

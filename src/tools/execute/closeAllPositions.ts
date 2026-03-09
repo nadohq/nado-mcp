@@ -1,16 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ProductEngineType } from '@nadohq/client';
-import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoClientWithAccount } from '../../client.js';
-import { asyncResult } from '../../utils/asyncResult.js';
-import {
-  buildOrderParams,
-  resolveOrderParams,
-} from '../../utils/orderBuilder.js';
+import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { ProductIdsSchema } from '../../utils/schemas.js';
+import { type BalanceSide, ProductIdsSchema } from '../../utils/schemas.js';
 
 export function registerCloseAllPositions(
   server: McpServer,
@@ -28,9 +24,9 @@ export function registerCloseAllPositions(
         slippagePct: z
           .number()
           .positive()
-          .default(2)
+          .default(DEFAULT_SLIPPAGE_PCT)
           .describe(
-            'Slippage tolerance percentage for all close orders (default: 2%)',
+            `Slippage tolerance percentage for all close orders (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
           ),
         productIds: ProductIdsSchema.optional().describe(
           'Filter: only close positions for these product IDs (omit to close all)',
@@ -51,7 +47,7 @@ export function registerCloseAllPositions(
     }: {
       slippagePct: number;
       productIds?: number[];
-      side?: 'long' | 'short';
+      side?: BalanceSide;
     }) => {
       requireSigner('close_all_positions', ctx);
 
@@ -62,7 +58,7 @@ export function registerCloseAllPositions(
 
       const perpPositions = summary.balances.filter((b) => {
         if (b.type !== ProductEngineType.PERP) return false;
-        const amount = new BigNumber(b.amount.toString());
+        const amount = b.amount;
         if (amount.isZero()) return false;
         if (productIds && !productIds.includes(b.productId)) return false;
         if (side === 'long' && amount.isNegative()) return false;
@@ -78,25 +74,17 @@ export function registerCloseAllPositions(
 
       const orders = await Promise.all(
         perpPositions.map(async (position) => {
-          const positionAmount = new BigNumber(position.amount.toString());
+          const positionAmount = position.amount;
           const isLong = positionAmount.isPositive();
           const closeSide = isLong ? ('short' as const) : ('long' as const);
           const absAmount = positionAmount.abs().toNumber();
 
-          const resolved = await resolveOrderParams(
-            ctx.client,
-            position.productId,
-            closeSide,
-            absAmount,
-            undefined,
-            slippagePct,
-          );
-
-          const orderParams = buildOrderParams({
+          const orderParams = await buildOrder({
+            client: ctx.client,
             productId: position.productId,
             side: closeSide,
-            amountX18: resolved.amountX18,
-            price: resolved.price,
+            amount: absAmount,
+            slippagePct,
             orderExecutionType: 'ioc',
             reduceOnly: true,
           });
@@ -112,7 +100,7 @@ export function registerCloseAllPositions(
         }),
       );
 
-      return asyncResult(
+      return handleToolRequest(
         'close_all_positions',
         'Failed to close all positions',
         async () => {
@@ -126,7 +114,7 @@ export function registerCloseAllPositions(
               positionsClosed: perpPositions.length,
               slippagePct: `${slippagePct}%`,
               positions: perpPositions.map((p) => {
-                const amount = new BigNumber(p.amount.toString());
+                const amount = p.amount;
                 return {
                   productId: p.productId,
                   side: amount.isPositive() ? 'long' : 'short',
