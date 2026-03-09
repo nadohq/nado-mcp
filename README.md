@@ -63,7 +63,9 @@ Replace `/absolute/path/to/nado-mcp` with the actual path where you cloned the r
 
 ## Security
 
-**Never put your main wallet private key in the MCP config.** The config file is stored in plain text on disk, readable by any process running as your user. If accidentally committed to version control, the key is permanently exposed.
+MCP servers run **locally on your machine** as child processes spawned by the MCP client (Cursor, Claude Desktop, etc.). Communication happens over stdio — there are no open ports and no network exposure. Environment variables like `PRIVATE_KEY` stay on your machine and are never sent to any AI provider; the model only sees tool definitions and tool results.
+
+That said, **never put your main wallet private key in the MCP config.** The config file is stored in plain text on disk, readable by any process running as your user. If accidentally committed to version control, the key is permanently exposed.
 
 The server supports three operating modes, from most to least secure:
 
@@ -142,20 +144,28 @@ From your main wallet, call `link_signer` with the zero address (`0x000000000000
 - **One signer per subaccount**: each subaccount can have at most one linked signer. Linking a new address replaces the previous one.
 - **Rate limits**: linked signers may have separate rate limits from the subaccount owner.
 
-### 3. Direct Key (Testnet / Dev Only)
+### 3. Direct Key
 
-For testnet or local development, you can use your wallet key directly. Omit `SUBACCOUNT_OWNER` and the server derives it from `PRIVATE_KEY`:
+You can use your wallet key directly. Omit `SUBACCOUNT_OWNER` and the server derives it from `PRIVATE_KEY`:
 
 ```json
 {
   "env": {
-    "DATA_ENV": "nadoTestnet",
+    "DATA_ENV": "nadoMainnet",
     "PRIVATE_KEY": "0xYOUR_PRIVATE_KEY"
   }
 }
 ```
 
-**Do not use this on mainnet with real funds.** The key is stored in plain text and any process on your machine can read it.
+Because MCP servers run locally as child processes with no network exposure, your key never leaves your machine. This is a valid option for users who prefer simplicity over the revocability that a linked signer provides.
+
+That said, the key is stored in plain text in your MCP client config, so keep these risks in mind:
+
+- Any process running as your OS user can read the config file.
+- If accidentally committed to version control, the key is permanently exposed.
+- If the key is compromised, you must move funds — there is nothing to "revoke".
+
+For mainnet with significant funds, a linked signer (Option 2) is still recommended because it limits the blast radius to a disposable key you can revoke instantly.
 
 ## Environment Variables
 

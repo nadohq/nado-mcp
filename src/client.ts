@@ -23,10 +23,14 @@ export interface NadoClientWithAccount {
   subaccountOwner?: Address;
   subaccountName: string;
   chainId: number;
+  /** True when a PRIVATE_KEY was provided and a walletClient was created. */
+  hasSigner: boolean;
 }
 
 export type NadoClientWithSigner = NadoClientWithAccount &
-  Required<Pick<NadoClientWithAccount, 'subaccountOwner'>>;
+  Required<Pick<NadoClientWithAccount, 'subaccountOwner'>> & {
+    hasSigner: true;
+  };
 
 export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
   const chain = CHAIN_ENV_TO_CHAIN[config.chainEnv];
@@ -54,7 +58,7 @@ export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
   if (config.subaccountOwner) {
     if (!isAddress(config.subaccountOwner)) {
       throw new Error(
-        `SUBACCOUNT_OWNER must be a valid Ethereum address. Got: ${config.subaccountOwner}`,
+        'SUBACCOUNT_OWNER must be a valid Ethereum address (0x-prefixed, 40 hex chars).',
       );
     }
     subaccountOwner = config.subaccountOwner;
@@ -68,5 +72,6 @@ export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
     subaccountOwner,
     subaccountName: config.subaccountName,
     chainId: chain.id,
+    hasSigner: !!walletClient,
   };
 }
