@@ -1,9 +1,9 @@
-import { ProductEngineType } from '@nadohq/client';
+import { type ChainEnv, ProductEngineType } from '@nadohq/client';
 import Fuse from 'fuse.js';
 
-import { type DataEnv, getDataEnvConfig, getMetadataUrl } from '../dataEnv.js';
+import { type DataEnv, getMetadataUrl } from '../dataEnv.js';
 
-interface PerpMetadata {
+interface ApiPerpMetadata {
   marketName: string;
   symbol: string;
   icon: { asset: string };
@@ -12,7 +12,7 @@ interface PerpMetadata {
   marketCategories: string[];
 }
 
-interface SpotMetadata {
+interface ApiSpotMetadata {
   token: {
     address: string;
     chainId: number;
@@ -26,21 +26,26 @@ interface SpotMetadata {
   marketCategories: string[];
 }
 
-interface EnvMetadata {
-  perp: Record<string, PerpMetadata>;
-  spot: Record<string, SpotMetadata>;
+interface ApiEnvMetadata {
+  perp: Record<string, ApiPerpMetadata>;
+  spot: Record<string, ApiSpotMetadata>;
 }
 
 export interface Market {
   productId: number;
   symbol: string;
+  marketName: string;
   type: ProductEngineType;
+  typeLabel: 'perp' | 'spot';
 }
 
-const cache = new Map<DataEnv, Market[]>();
+const cache = new Map<ChainEnv, Market[]>();
 
-async function getMarkets(dataEnv: DataEnv): Promise<Market[]> {
-  const existing = cache.get(dataEnv);
+export async function getMarkets(
+  dataEnv: DataEnv,
+  chainEnv: ChainEnv,
+): Promise<Market[]> {
+  const existing = cache.get(chainEnv);
   if (existing) return existing;
 
   const url = getMetadataUrl(dataEnv);
@@ -51,33 +56,37 @@ async function getMarkets(dataEnv: DataEnv): Promise<Market[]> {
     );
   }
 
-  const allEnvs = (await res.json()) as Record<string, EnvMetadata>;
-  const { chainEnvs } = getDataEnvConfig(dataEnv);
-  const chainEnv = chainEnvs.find((ce) => allEnvs[ce]);
-  if (!chainEnv) {
-    throw new Error(`No product metadata found for data env: ${dataEnv}`);
+  const allEnvs = (await res.json()) as Record<string, ApiEnvMetadata>;
+  const env = allEnvs[chainEnv];
+  if (!env) {
+    throw new Error(
+      `No product metadata found for chain env "${chainEnv}" in ${url}`,
+    );
   }
 
-  const env = allEnvs[chainEnv];
   const markets: Market[] = [];
 
   for (const [id, entry] of Object.entries(env.perp)) {
     markets.push({
       productId: Number(id),
       symbol: entry.symbol,
+      marketName: entry.marketName,
       type: ProductEngineType.PERP,
+      typeLabel: 'perp',
     });
   }
 
   for (const [id, entry] of Object.entries(env.spot)) {
     markets.push({
       productId: Number(id),
-      symbol: entry.token?.symbol ?? entry.marketName,
+      symbol: entry.token.symbol,
+      marketName: entry.marketName,
       type: ProductEngineType.SPOT,
+      typeLabel: 'spot',
     });
   }
 
-  cache.set(dataEnv, markets);
+  cache.set(chainEnv, markets);
   return markets;
 }
 
@@ -88,26 +97,29 @@ async function getMarkets(dataEnv: DataEnv): Promise<Market[]> {
  */
 export async function resolveMarket(
   dataEnv: DataEnv,
+  chainEnv: ChainEnv,
   query: string,
 ): Promise<Market> {
-  const markets = await getMarkets(dataEnv);
+  const markets = await getMarkets(dataEnv, chainEnv);
 
   const fuse = new Fuse(markets, {
-    keys: ['symbol'],
+    keys: [
+      { name: 'symbol', weight: 2 },
+      { name: 'marketName', weight: 1.5 },
+      { name: 'typeLabel', weight: 0.5 },
+    ],
     threshold: 0.4,
   });
 
   const results = fuse.search(query);
   if (results.length === 0) {
     const available = markets
-      .filter((m) => m.type === ProductEngineType.PERP)
-      .map((m) => m.symbol)
+      .map((m) => `${m.symbol} (${m.marketName})`)
       .join(', ');
     throw new Error(
-      `Could not find a market matching "${query}". Available perp symbols: ${available}`,
+      `Could not find a market matching "${query}". Available markets: ${available}`,
     );
   }
 
-  const perp = results.find((r) => r.item.type === ProductEngineType.PERP);
-  return (perp ?? results[0]).item;
+  return results[0].item;
 }

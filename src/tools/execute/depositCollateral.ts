@@ -2,14 +2,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
+import { getTokenDecimals } from '../../utils/tokenDecimals.js';
 
 export function registerDepositCollateral(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'deposit_collateral',
@@ -19,7 +20,8 @@ export function registerDepositCollateral(
         'Deposit collateral from the wallet into a subaccount. ' +
         'This is an on-chain transaction that requires gas (native token for fees). ' +
         'Automatically approves the token spending allowance before depositing. ' +
-        'Use get_all_markets to find spot product IDs (e.g. 0 for USDT0).',
+        'Use get_all_markets to find spot product IDs (e.g. 0 for USDT0). ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productId: ProductIdSchema.describe(
           'Spot product ID to deposit (e.g. 0 for USDT0)',
@@ -31,12 +33,13 @@ export function registerDepositCollateral(
             'Amount to deposit in human-readable units (e.g. 100 for 100 USDT0)',
           ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({ productId, amount }: { productId: number; amount: number }) => {
       requireSigner('deposit_collateral', ctx);
 
-      const amountX18 = addDecimals(amount);
+      const decimals = getTokenDecimals(ctx.chainEnv, productId);
+      const tokenAmount = addDecimals(amount, decimals);
 
       return handleToolRequest(
         'deposit_collateral',
@@ -44,13 +47,13 @@ export function registerDepositCollateral(
         async () => {
           await ctx.client.spot.approveAllowance({
             productId,
-            amount: amountX18,
+            amount: tokenAmount,
           });
 
           return ctx.client.spot.deposit({
             subaccountName: ctx.subaccountName,
             productId,
-            amount: amountX18,
+            amount: tokenAmount,
           });
         },
       );

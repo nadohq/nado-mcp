@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { buildOrder } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
@@ -13,7 +13,7 @@ import {
 
 export function registerPlaceScaledOrders(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'place_scaled_orders',
@@ -24,7 +24,8 @@ export function registerPlaceScaledOrders(
         'Accepts parallel arrays of prices and amounts, allowing full flexibility ' +
         '(linear grids, exponential spacing, custom distributions, etc.). ' +
         'Both arrays must have the same length (max 50). ' +
-        'All orders are placed as GTC limit orders using cross margin.',
+        'All orders are placed as GTC limit orders using cross margin. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productId: ProductIdSchema,
         side: BalanceSideSchema,
@@ -39,7 +40,7 @@ export function registerPlaceScaledOrders(
           .max(50)
           .describe('Sizes in base asset units for each order'),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       productId,

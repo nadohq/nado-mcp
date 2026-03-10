@@ -63,6 +63,54 @@ The **Nado Liquidity Provider (NLP) vault** is a protocol-owned liquidity pool t
 - **Market orders**: Execute immediately at the best available price.
 - **Trigger orders**: Conditional orders that activate when a price condition is met. Includes stop-loss, take-profit, and TWAP orders. Visible via `get_trigger_orders`.
 
+## CRITICAL: Transaction Safety — Mandatory Confirmation Before ANY Execution
+
+**THIS SECTION IS NON-NEGOTIABLE AND MUST BE FOLLOWED FOR EVERY WRITE OPERATION WITHOUT EXCEPTION.**
+
+You MUST NEVER call any write tool until the user has explicitly confirmed the action in a prior message. No exceptions — not for urgency, not for simplicity, not for convenience, not even if the user phrases their request as a direct command. A user saying "swap X to Y" is a REQUEST, not confirmation. You must still present a summary and wait.
+
+**Violation of this rule means real money is at risk. Treat every write operation as irreversible.**
+
+### Write Operations (ALL require confirmation — no exceptions)
+
+- **Orders**: place_order, place_scaled_orders, place_trigger_order, place_twap_order, cancel_and_place
+- **Cancels**: cancel_orders, cancel_product_orders, cancel_trigger_orders, cancel_trigger_product_orders
+- **Positions**: close_position, close_all_positions
+- **Funds**: deposit_collateral, withdraw_collateral, transfer_quote
+- **NLP Vault**: mint_nlp, burn_nlp
+- **Account**: link_signer
+
+### Mandatory Flow (every step is required, in order)
+
+**Step 1: Gather context** — fetch prices, balances, liquidity, or any data needed to estimate the outcome. Do NOT skip this step even if you think you already have the data.
+
+**Step 2: Present a summary** — show the user exactly what will happen. The summary MUST include:
+   - Action description (e.g. "Sell 1 BTC spot → buy ~34 ETH spot")
+   - Relevant prices (bid/ask, oracle)
+   - Estimated output or cost
+   - Fees or slippage if applicable
+   - Risks (e.g. low liquidity, high slippage, large price impact)
+
+**Step 3: Ask for explicit confirmation** — end your message by asking the user to confirm. Do NOT proceed until the user replies with clear approval (e.g. "yes", "go ahead", "confirmed", "do it").
+
+**Step 4: Execute only after confirmation** — only call write tools in a SUBSEQUENT message after the user has confirmed. NEVER call a write tool in the same response where you present the summary.
+
+### What counts as confirmation
+
+- The user must reply AFTER seeing the summary with an affirmative response.
+- The initial request (e.g. "swap all ETH to BTC") is NOT confirmation — it is a request that triggers Step 1.
+- If the user changes parameters after seeing the summary, restart from Step 1.
+
+### Example
+
+User asks: "swap 1 btc to eth on spot"
+
+Correct behavior:
+1. Fetch BTC and ETH spot prices, check balances and liquidity
+2. Present: "Here's the plan: Sell 1 kBTC at ~$70,274 (bid) → ~$70,274 USDT0, then buy wETH at ~$2,050 (ask) → ~34.27 wETH. Slippage tolerance: 2%. Estimated fees: ~$X. Shall I proceed?"
+3. **STOP. Wait for user to reply with confirmation.**
+4. Only after user confirms → execute both orders
+
 ## Common Workflows
 
 ### Check a portfolio
@@ -79,6 +127,10 @@ The **Nado Liquidity Provider (NLP) vault** is a protocol-owned liquidity pool t
 3. `get_funding_rate` -- funding rate (perps)
 4. `get_market_liquidity` -- orderbook depth
 5. `get_tickers` -- 24h volume, price change
+
+### Check trading stats
+
+1. `get_account_stats` -- 30-day (or custom period) pre-computed stats: volume, trade count, fees, PnL, per-market breakdown, daily breakdown, maker/taker split. This is the single fastest tool for answering questions about trading history and performance.
 
 ### Screen for opportunities
 

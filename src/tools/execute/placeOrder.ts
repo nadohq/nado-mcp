@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   DEFAULT_SLIPPAGE_PCT,
@@ -12,31 +12,21 @@ import { requireSigner } from '../../utils/requireSigner.js';
 import {
   type BalanceSide,
   BalanceSideSchema,
+  type MarginMode,
+  MarginModeSchema,
   ProductIdSchema,
+  type TimeInForce,
+  TimeInForceSchema,
 } from '../../utils/schemas.js';
 
-const MarginModeSchema = z
-  .enum(['cross', 'isolated'])
-  .default('cross')
-  .describe('Margin mode: cross (default) or isolated');
-
-const TimeInForceSchema = z
-  .enum(['gtc', 'ioc', 'fok', 'post_only'])
-  .default('gtc')
-  .describe(
-    'Time in force: gtc (good-til-cancel, default), ioc (immediate-or-cancel), fok (fill-or-kill), post_only',
-  );
-
-export function registerPlaceOrder(
-  server: McpServer,
-  ctx: NadoClientWithAccount,
-): void {
+export function registerPlaceOrder(server: McpServer, ctx: NadoContext): void {
   server.registerTool(
     'place_order',
     {
       title: 'Place Order',
       description:
-        'Place a market or limit order on Nado. Omit price for a market order (will use IOC with slippage). Provide price for a limit order. Supports cross and isolated margin modes.',
+        'Place a market or limit order on Nado. Omit price for a market order (will use IOC with slippage). Provide price for a limit order. Supports cross and isolated margin modes. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productId: ProductIdSchema,
         side: BalanceSideSchema,
@@ -82,7 +72,7 @@ export function registerPlaceOrder(
             'For isolated margin orders, whether margin can be borrowed from the cross account. Defaults to engine default.',
           ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       productId,
@@ -101,9 +91,9 @@ export function registerPlaceOrder(
       side: BalanceSide;
       amount: number;
       price?: number;
-      marginMode: 'cross' | 'isolated';
+      marginMode: MarginMode;
       leverage?: number;
-      timeInForce: 'gtc' | 'ioc' | 'fok' | 'post_only';
+      timeInForce: TimeInForce;
       reduceOnly: boolean;
       slippagePct: number;
       spotLeverage?: boolean;
@@ -133,15 +123,19 @@ export function registerPlaceOrder(
         'place_order',
         `Failed to place ${side} order for product ${productId}`,
         () =>
-          ctx.client.market.placeOrder({
-            ...orderParams,
-            order: {
-              subaccountOwner: ctx.subaccountOwner,
-              subaccountName: ctx.subaccountName,
-              ...orderParams.order,
-            },
-            spotLeverage,
-            borrowMargin,
+          ctx.client.market.placeOrders({
+            orders: [
+              {
+                ...orderParams,
+                order: {
+                  subaccountOwner: ctx.subaccountOwner,
+                  subaccountName: ctx.subaccountName,
+                  ...orderParams.order,
+                },
+                spotLeverage,
+                borrowMargin,
+              },
+            ],
           }),
       );
     },

@@ -93,11 +93,31 @@ Nado allows any subaccount to designate a **linked signer address**. Once linked
 
 **Step 1: Generate a hot key**
 
+Any tool that creates an Ethereum keypair will work. Pick whichever you have available:
+
+**Option A — Node.js (no extra install, uses viem from this project)**
+
+```bash
+node -e "const{generatePrivateKey,privateKeyToAddress}=require('viem/accounts');const k=generatePrivateKey();console.log('Address: '+privateKeyToAddress(k)+'\nPrivate key: '+k)"
+```
+
+**Option B — OpenSSL (available on most systems)**
+
+```bash
+openssl rand -hex 32 | awk '{print "0x"$1}'
+```
+
+This gives you a private key. To derive the address, paste the key into any wallet (e.g. MetaMask import) or use Option A.
+
+**Option C — Foundry (`cast`)**
+
+If you have [Foundry](https://book.getfoundry.sh/) installed:
+
 ```bash
 cast wallet new
 ```
 
-This prints a new address and private key. Save both.
+Save the printed address and private key.
 
 **Step 2: Link the hot key to your subaccount**
 
@@ -173,14 +193,11 @@ Set these in the `"env"` block of your MCP client config (recommended). A `.env`
 
 | Variable           | Required | Default       | Description                                      |
 | ------------------ | -------- | ------------- | ------------------------------------------------ |
-| `DATA_ENV`         | Yes*     | —             | `nadoMainnet` or `nadoTestnet`                   |
-| `CHAIN_ENV`        | No       | Auto          | Override chain within the data env (e.g. `inkMainnet`). Accepted alone for backwards compatibility. |
+| `DATA_ENV`         | Yes      | —             | `nadoMainnet` or `nadoTestnet`                   |
 | `RPC_URL`          | No       | Chain default | Custom RPC URL                                   |
 | `PRIVATE_KEY`      | No       | —             | Private key for signing (linked signer recommended) |
 | `SUBACCOUNT_OWNER` | No       | —             | Main wallet address (required when using a linked signer) |
 | `SUBACCOUNT_NAME`  | No       | `default`     | Default subaccount name                          |
-
-\* Either `DATA_ENV` or `CHAIN_ENV` must be set. `DATA_ENV` is preferred.
 
 ## Development
 

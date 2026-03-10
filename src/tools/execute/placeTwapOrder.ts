@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toBigDecimal } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   DEFAULT_SLIPPAGE_PCT,
@@ -18,7 +18,7 @@ import {
 
 export function registerPlaceTwapOrder(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'place_twap_order',
@@ -27,7 +27,8 @@ export function registerPlaceTwapOrder(
       description:
         'Place a TWAP (Time-Weighted Average Price) order that splits a total amount into equal orders executed at regular intervals. ' +
         'Uses cross margin only (TWAP cannot use isolated margin). ' +
-        'Each order is executed as an IOC market order with oracle-based slippage protection.',
+        'Each order is executed as an IOC market order with oracle-based slippage protection. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productId: ProductIdSchema,
         side: BalanceSideSchema,
@@ -59,7 +60,7 @@ export function registerPlaceTwapOrder(
           .default(false)
           .describe('If true, only reduces an existing position'),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       productId,

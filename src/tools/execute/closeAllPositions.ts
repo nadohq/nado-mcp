@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ProductEngineType } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
@@ -10,7 +10,7 @@ import { type BalanceSide, ProductIdsSchema } from '../../utils/schemas.js';
 
 export function registerCloseAllPositions(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'close_all_positions',
@@ -19,7 +19,8 @@ export function registerCloseAllPositions(
       description:
         'Close all open perp positions by placing reduce-only market orders for each. ' +
         'Fetches all positions from the subaccount summary and places IOC orders to close each one. ' +
-        'Skips positions with zero balance. Optionally filter by product IDs and/or side.',
+        'Skips positions with zero balance. Optionally filter by product IDs and/or side. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         slippagePct: z
           .number()
@@ -38,7 +39,7 @@ export function registerCloseAllPositions(
             'Filter: only close positions on this side (omit to close both sides)',
           ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       slippagePct,

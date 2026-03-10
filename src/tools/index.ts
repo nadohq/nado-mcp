@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import type { NadoClientWithAccount } from '../client.js';
+import type { NadoContext } from '../context.js';
 import { registerBurnNlp } from './execute/burnNlp.js';
 import { registerCancelAndPlace } from './execute/cancelAndPlace.js';
 import { registerCancelOrders } from './execute/cancelOrders.js';
@@ -18,6 +18,7 @@ import { registerPlaceTriggerOrder } from './execute/placeTriggerOrder.js';
 import { registerPlaceTwapOrder } from './execute/placeTwapOrder.js';
 import { registerTransferQuote } from './execute/transferQuote.js';
 import { registerWithdrawCollateral } from './execute/withdrawCollateral.js';
+import { registerGetAccountStats } from './indexer/getAccountStats.js';
 import { registerGetFundingPayments } from './indexer/getFundingPayments.js';
 import { registerGetLeaderboard } from './indexer/getLeaderboard.js';
 import { registerGetMarketSnapshots } from './indexer/getMarketSnapshots.js';
@@ -50,10 +51,7 @@ import { registerGetIsolatedPositions } from './subaccount/getPositions.js';
 import { registerGetSubaccountSummary } from './subaccount/getSummary.js';
 import { registerListSubaccounts } from './subaccount/listSubaccounts.js';
 
-export function registerTools(
-  server: McpServer,
-  ctx: NadoClientWithAccount,
-): void {
+export function registerTools(server: McpServer, ctx: NadoContext): void {
   const { client } = ctx;
 
   // Market data
@@ -71,7 +69,7 @@ export function registerTools(
   registerGetTriggerOrders(server, client);
 
   // Subaccount
-  registerGetSubaccountSummary(server, client);
+  registerGetSubaccountSummary(server, ctx);
   registerGetIsolatedPositions(server, client);
   registerGetFeeRates(server, client);
   registerGetMaxWithdrawable(server, client);
@@ -85,6 +83,7 @@ export function registerTools(
   registerGetNlpMaxMintBurn(server, client);
 
   // Indexer / historical
+  registerGetAccountStats(server, ctx);
   registerGetHistoricalOrders(server, client);
   registerGetMatchEvents(server, client);
   registerGetFundingPayments(server, client);

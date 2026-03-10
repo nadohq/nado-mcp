@@ -2,14 +2,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { SubaccountNameSchema } from '../../utils/schemas.js';
 
 export function registerTransferQuote(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'transfer_quote',
@@ -18,7 +18,8 @@ export function registerTransferQuote(
       description:
         'Transfer USDT0 between subaccounts under the same wallet. ' +
         'Use this for moving funds between cross and isolated subaccounts, or adjusting isolated position margin. ' +
-        'Use list_subaccounts to see available subaccounts.',
+        'Use list_subaccounts to see available subaccounts. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         amount: z
           .number()
@@ -31,7 +32,7 @@ export function registerTransferQuote(
           'Name of the sender subaccount to transfer from',
         ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       amount,

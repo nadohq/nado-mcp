@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   DEFAULT_SLIPPAGE_PCT,
@@ -12,25 +12,17 @@ import { requireSigner } from '../../utils/requireSigner.js';
 import {
   type BalanceSide,
   BalanceSideSchema,
+  type MarginMode,
+  MarginModeSchema,
   ProductIdSchema,
   ProductIdsSchema,
+  type TimeInForce,
+  TimeInForceSchema,
 } from '../../utils/schemas.js';
-
-const MarginModeSchema = z
-  .enum(['cross', 'isolated'])
-  .default('cross')
-  .describe('Margin mode: cross (default) or isolated');
-
-const TimeInForceSchema = z
-  .enum(['gtc', 'ioc', 'fok', 'post_only'])
-  .default('gtc')
-  .describe(
-    'Time in force: gtc (good-til-cancel, default), ioc (immediate-or-cancel), fok (fill-or-kill), post_only',
-  );
 
 export function registerCancelAndPlace(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'cancel_and_place',
@@ -39,7 +31,8 @@ export function registerCancelAndPlace(
       description:
         'Atomically cancel one or more orders and place a new order in a single operation. ' +
         'Use this to modify an existing order without risk of partial fills between cancel and place. ' +
-        'Use get_open_orders to find order digests for cancellation.',
+        'Use get_open_orders to find order digests for cancellation. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         cancelProductIds: ProductIdsSchema.describe(
           'Product IDs of the orders to cancel (must match cancelDigests by index)',
@@ -81,7 +74,7 @@ export function registerCancelAndPlace(
             `Slippage tolerance percentage for market orders (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
           ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       cancelProductIds,
@@ -102,9 +95,9 @@ export function registerCancelAndPlace(
       side: BalanceSide;
       amount: number;
       price?: number;
-      marginMode: 'cross' | 'isolated';
+      marginMode: MarginMode;
       leverage?: number;
-      timeInForce: 'gtc' | 'ioc' | 'fok' | 'post_only';
+      timeInForce: TimeInForce;
       reduceOnly: boolean;
       slippagePct: number;
     }) => {

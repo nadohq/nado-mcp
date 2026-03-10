@@ -2,14 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 
-export function registerMintNlp(
-  server: McpServer,
-  ctx: NadoClientWithAccount,
-): void {
+export function registerMintNlp(server: McpServer, ctx: NadoContext): void {
   server.registerTool(
     'mint_nlp',
     {
@@ -17,7 +14,8 @@ export function registerMintNlp(
       description:
         'Deposit quote (USDT0) into the NLP vault to mint NLP tokens. ' +
         'Use get_nlp_max_mint_burn to check the maximum deposit amount. ' +
-        'Minted NLP tokens have a lock-up period before they can be burned.',
+        'Minted NLP tokens have a lock-up period before they can be burned. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         quoteAmount: z
           .number()
@@ -32,7 +30,7 @@ export function registerMintNlp(
             'If true, allows borrowing to mint (negative USDT0 balance). Defaults to engine default (true).',
           ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       quoteAmount,

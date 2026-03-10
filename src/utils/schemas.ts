@@ -54,3 +54,19 @@ export const PaginationLimitSchema = z
   .positive()
   .default(100)
   .describe('Maximum number of results to return (1-500, default 100)');
+
+export const MarginModeSchema = z
+  .enum(['cross', 'isolated'])
+  .default('cross')
+  .describe('Margin mode: cross (default) or isolated');
+
+export type MarginMode = z.infer<typeof MarginModeSchema>;
+
+export const TimeInForceSchema = z
+  .enum(['gtc', 'ioc', 'fok', 'post_only'])
+  .default('gtc')
+  .describe(
+    'Time in force: gtc (good-til-cancel, default), ioc (immediate-or-cancel), fok (fill-or-kill), post_only',
+  );
+
+export type TimeInForce = z.infer<typeof TimeInForceSchema>;

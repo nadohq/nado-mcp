@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ProductEngineType } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
@@ -10,7 +10,7 @@ import { ProductIdSchema } from '../../utils/schemas.js';
 
 export function registerClosePosition(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'close_position',
@@ -19,7 +19,8 @@ export function registerClosePosition(
       description:
         'Close an open position by placing a reduce-only market order in the opposite direction. ' +
         'Fetches the current position size automatically and places a full close. ' +
-        'Only works for perp positions with a non-zero balance.',
+        'Only works for perp positions with a non-zero balance. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productId: ProductIdSchema.describe(
           'Product ID of the position to close',
@@ -32,7 +33,7 @@ export function registerClosePosition(
             `Slippage tolerance percentage (default: ${DEFAULT_SLIPPAGE_PCT}%)`,
           ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       productId,

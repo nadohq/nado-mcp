@@ -1,13 +1,15 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import {
   type BalanceSide,
   BalanceSideSchema,
+  type MarginMode,
+  MarginModeSchema,
   ProductIdSchema,
 } from '../../utils/schemas.js';
 
@@ -24,14 +26,9 @@ const TriggerTypeSchema = z
     'Trigger condition type. Use oracle_price_above/below for oracle-based triggers, last_price_above/below for last trade price, mid_price_above/below for mid-market price.',
   );
 
-const MarginModeSchema = z
-  .enum(['cross', 'isolated'])
-  .default('cross')
-  .describe('Margin mode: cross (default) or isolated');
-
 export function registerPlaceTriggerOrder(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'place_trigger_order',
@@ -40,7 +37,8 @@ export function registerPlaceTriggerOrder(
       description:
         'Place a trigger order (stop-loss, take-profit, or conditional) that executes when a price condition is met. ' +
         'Use oracle_price_above/below for standard TP/SL. Omit price for a stop-market order; provide price for a stop-limit order. ' +
-        'Typically used with reduceOnly=true for TP/SL on existing positions.',
+        'Typically used with reduceOnly=true for TP/SL on existing positions. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productId: ProductIdSchema,
         side: BalanceSideSchema,
@@ -88,7 +86,7 @@ export function registerPlaceTriggerOrder(
             'For isolated margin orders, whether margin can be borrowed from the cross account. Defaults to engine default.',
           ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({
       productId,
@@ -110,7 +108,7 @@ export function registerPlaceTriggerOrder(
       triggerPrice: number;
       triggerType: z.infer<typeof TriggerTypeSchema>;
       reduceOnly: boolean;
-      marginMode: 'cross' | 'isolated';
+      marginMode: MarginMode;
       leverage?: number;
       slippagePct: number;
       borrowMargin?: boolean;

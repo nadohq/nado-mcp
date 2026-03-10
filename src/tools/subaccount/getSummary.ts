@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import { getMarkets } from '../../utils/resolveMarket.js';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
@@ -9,7 +10,7 @@ import {
 
 export function registerGetSubaccountSummary(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'get_subaccount_summary',
@@ -33,11 +34,27 @@ export function registerGetSubaccountSummary(
       handleToolRequest(
         'get_subaccount_summary',
         `Failed to fetch summary for ${subaccountOwner}/${subaccountName}.`,
-        () =>
-          client.subaccount.getSubaccountSummary({
-            subaccountOwner,
-            subaccountName,
-          }),
+        async () => {
+          const [summary, markets] = await Promise.all([
+            ctx.client.subaccount.getSubaccountSummary({
+              subaccountOwner,
+              subaccountName,
+            }),
+            getMarkets(ctx.dataEnv, ctx.chainEnv).catch(() => []),
+          ]);
+
+          const symbolByProductId = new Map(
+            markets.map((m) => [m.productId, m.symbol]),
+          );
+
+          return {
+            ...summary,
+            balances: summary.balances.map((b) => ({
+              symbol: symbolByProductId.get(b.productId) ?? undefined,
+              ...b,
+            })),
+          };
+        },
       ),
   );
 }

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { fmtProductIds } from '../../utils/formatting.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
@@ -8,7 +8,7 @@ import { ProductIdsSchema } from '../../utils/schemas.js';
 
 export function registerCancelTriggerProductOrders(
   server: McpServer,
-  ctx: NadoClientWithAccount,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'cancel_trigger_product_orders',
@@ -17,13 +17,14 @@ export function registerCancelTriggerProductOrders(
       description:
         'Cancel ALL trigger orders (stop-loss, take-profit, TWAP) for one or more products. ' +
         'Use this to quickly clear all trigger orders on specific markets. ' +
-        'For cancelling individual trigger orders by digest, use cancel_trigger_orders instead.',
+        'For cancelling individual trigger orders by digest, use cancel_trigger_orders instead. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productIds: ProductIdsSchema.describe(
           'Product IDs to cancel all trigger orders for',
         ),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({ productIds }: { productIds: number[] }) => {
       requireSigner('cancel_trigger_product_orders', ctx);

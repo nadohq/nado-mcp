@@ -2,14 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoClientWithAccount } from '../../client.js';
+import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 
-export function registerBurnNlp(
-  server: McpServer,
-  ctx: NadoClientWithAccount,
-): void {
+export function registerBurnNlp(server: McpServer, ctx: NadoContext): void {
   server.registerTool(
     'burn_nlp',
     {
@@ -17,14 +14,15 @@ export function registerBurnNlp(
       description:
         'Burn NLP tokens to withdraw quote (USDT0) from the NLP vault. ' +
         'Only unlocked NLP tokens can be burned. ' +
-        'Use get_nlp_locked_balances to check unlocked balance, and get_nlp_max_mint_burn to check the maximum burn amount.',
+        'Use get_nlp_locked_balances to check unlocked balance, and get_nlp_max_mint_burn to check the maximum burn amount. ' +
+        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         nlpAmount: z
           .number()
           .positive()
           .describe('Amount of NLP tokens to burn'),
       },
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({ nlpAmount }: { nlpAmount: number }) => {
       requireSigner('burn_nlp', ctx);

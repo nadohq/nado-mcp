@@ -2,6 +2,7 @@ import {
   CHAIN_ENV_TO_CHAIN,
   createNadoClient as createSdkClient,
   NadoClient,
+  type ChainEnv,
 } from '@nadohq/client';
 import {
   createPublicClient,
@@ -17,9 +18,10 @@ import type { DataEnv } from './dataEnv.js';
 
 export type { NadoClient };
 
-export interface NadoClientWithAccount {
+export interface NadoContext {
   client: NadoClient;
   dataEnv: DataEnv;
+  chainEnv: ChainEnv;
   subaccountOwner?: Address;
   subaccountName: string;
   chainId: number;
@@ -27,12 +29,12 @@ export interface NadoClientWithAccount {
   hasSigner: boolean;
 }
 
-export type NadoClientWithSigner = NadoClientWithAccount &
-  Required<Pick<NadoClientWithAccount, 'subaccountOwner'>> & {
+export type NadoSignerContext = NadoContext &
+  Required<Pick<NadoContext, 'subaccountOwner'>> & {
     hasSigner: true;
   };
 
-export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
+export function createNadoContext(config: ServerConfig): NadoContext {
   const chain = CHAIN_ENV_TO_CHAIN[config.chainEnv];
   const rpcUrl = config.rpcUrl ?? chain.rpcUrls.default.http[0];
   const publicClient = createPublicClient({ transport: http(rpcUrl) });
@@ -69,6 +71,7 @@ export function createNadoClient(config: ServerConfig): NadoClientWithAccount {
   return {
     client,
     dataEnv: config.dataEnv,
+    chainEnv: config.chainEnv,
     subaccountOwner,
     subaccountName: config.subaccountName,
     chainId: chain.id,
