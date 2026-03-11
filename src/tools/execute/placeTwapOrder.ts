@@ -1,12 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { toBigDecimal } from '@nadohq/client';
+import { addDecimals, packOrderAppendix, toBigDecimal } from '@nadohq/client';
+import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   DEFAULT_SLIPPAGE_PCT,
-  buildOrder,
   calculateTwapExpiration,
 } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
@@ -15,6 +15,43 @@ import {
   BalanceSideSchema,
   ProductIdSchema,
 } from '../../utils/schemas.js';
+
+function roundToIncrement(value: BigNumber, increment: BigNumber): BigNumber {
+  if (increment.isZero()) return value;
+  return value
+    .dividedBy(increment)
+    .integerValue(BigNumber.ROUND_DOWN)
+    .times(increment);
+}
+
+/**
+ * Computes per-order amounts for a TWAP, rounded to the market's size
+ * increment. Any rounding remainder is redistributed across orders so the
+ * sum exactly equals the intended total.
+ */
+function computeTwapAmounts(
+  totalAmount: BigNumber,
+  numOrders: number,
+  sizeIncrement: BigNumber,
+): BigNumber[] {
+  const perOrder = totalAmount.dividedBy(numOrders);
+  const rounded = Array.from({ length: numOrders }, () =>
+    roundToIncrement(perOrder, sizeIncrement),
+  );
+
+  if (!sizeIncrement.isZero()) {
+    let diff = totalAmount.minus(
+      rounded.reduce((s, a) => s.plus(a), new BigNumber(0)),
+    );
+    for (let i = 0; i < numOrders && !diff.isZero(); i++) {
+      const adj = diff.isPositive() ? sizeIncrement : sizeIncrement.negated();
+      rounded[i] = rounded[i].plus(adj);
+      diff = diff.minus(adj);
+    }
+  }
+
+  return rounded;
+}
 
 export function registerPlaceTwapOrder(
   server: McpServer,
@@ -81,14 +118,19 @@ export function registerPlaceTwapOrder(
     }) => {
       requireSigner('place_twap_order', ctx);
 
-      const numOrders = Math.floor((durationMinutes * 60) / intervalSeconds);
+      // Frontend: floor(duration / interval) + 1  (first order is immediate)
+      const numOrders =
+        Math.floor((durationMinutes * 60) / intervalSeconds) + 1;
       if (numOrders < 2) {
         throw new Error(
           `TWAP requires at least 2 orders. Duration ${durationMinutes}min / interval ${intervalSeconds}s = ${numOrders} orders.`,
         );
       }
 
-      const totalNotional = toBigDecimal(amountPerOrder).times(numOrders);
+      const allMarkets = await ctx.client.market.getAllMarkets();
+      const market = allMarkets.find((m) => m.productId === productId);
+      const sizeIncrement = market ? market.sizeIncrement : new BigNumber(1);
+      const priceIncrement = market ? market.priceIncrement : new BigNumber(1);
 
       const marketPrice = await ctx.client.market.getLatestMarketPrice({
         productId,
@@ -100,24 +142,62 @@ export function registerPlaceTwapOrder(
         );
       }
 
-      const totalAmount = totalNotional.dividedBy(refPrice).toNumber();
+      const totalNotional = toBigDecimal(amountPerOrder).times(numOrders);
+      const totalHumanAmount = totalNotional.dividedBy(refPrice);
+
+      // Compute per-order amounts in human units, rounded to sizeIncrement,
+      // then convert each to x18.
+      const sizeIncrementHuman = market
+        ? toBigDecimal(market.sizeIncrement).dividedBy(toBigDecimal(10).pow(18))
+        : new BigNumber(0);
+
+      const perOrderAmounts = computeTwapAmounts(
+        totalHumanAmount,
+        numOrders,
+        sizeIncrementHuman,
+      );
+
+      // x18 signed amounts for the trigger criteria
+      const amountsX18 = perOrderAmounts.map((amt) => {
+        const x18 = roundToIncrement(
+          toBigDecimal(addDecimals(amt.abs().toNumber())),
+          sizeIncrement,
+        );
+        return side === 'short' ? x18.negated() : x18;
+      });
+
+      // Total amount = sum of per-order amounts (ensures no mismatch)
+      const totalAmountX18 = amountsX18.reduce(
+        (sum, a) => sum.plus(a),
+        new BigNumber(0),
+      );
+
+      // Frontend: Long → price * 1000, Short → 0 (permissive price for oracle-based slippage)
+      const orderPrice =
+        side === 'long'
+          ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed()
+          : '0';
 
       const expiration = calculateTwapExpiration(numOrders, intervalSeconds);
 
-      const twapParams = await buildOrder({
-        client: ctx.client,
-        productId,
-        side,
-        amount: totalAmount,
-        slippagePct,
+      const appendix = packOrderAppendix({
         orderExecutionType: 'ioc',
+        triggerType: 'twap_custom_amounts',
         reduceOnly,
         twap: {
           numOrders,
           slippageFrac: slippagePct / 100,
         },
-        expiration,
       });
+
+      const order = {
+        subaccountOwner: ctx.subaccountOwner,
+        subaccountName: ctx.subaccountName,
+        price: orderPrice,
+        amount: totalAmountX18.toFixed(0),
+        expiration,
+        appendix,
+      };
 
       return handleToolRequest(
         'place_twap_order',
@@ -126,16 +206,13 @@ export function registerPlaceTwapOrder(
           const result = await ctx.client.market.placeTriggerOrders({
             orders: [
               {
-                productId: twapParams.productId,
-                order: {
-                  subaccountOwner: ctx.subaccountOwner,
-                  subaccountName: ctx.subaccountName,
-                  ...twapParams.order,
-                },
+                productId,
+                order,
                 triggerCriteria: {
                   type: 'time' as const,
                   criteria: {
                     interval: intervalSeconds,
+                    amounts: amountsX18.map((a) => a.toFixed(0)),
                   },
                 },
               },
