@@ -5,8 +5,8 @@ import { z } from 'zod';
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
+import { getTokenDecimals } from '../../utils/resolveMarket.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
-import { getTokenDecimals } from '../../utils/tokenDecimals.js';
 
 export function registerWithdrawCollateral(
   server: McpServer,
@@ -51,7 +51,11 @@ export function registerWithdrawCollateral(
     }) => {
       requireSigner('withdraw_collateral', ctx);
 
-      const decimals = getTokenDecimals(ctx.chainEnv, productId);
+      const decimals = await getTokenDecimals(
+        ctx.dataEnv,
+        ctx.chainEnv,
+        productId,
+      );
 
       return handleToolRequest(
         'withdraw_collateral',

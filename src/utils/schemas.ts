@@ -34,16 +34,8 @@ export const BalanceSideSchema = z
 
 export type BalanceSide = z.infer<typeof BalanceSideSchema>;
 
-const CANDLESTICK_PERIODS = Object.values(CandlestickPeriod).filter(
-  (v): v is number => typeof v === 'number',
-);
-
 export const CandlestickPeriodSchema = z
-  .number()
-  .int()
-  .refine((v) => CANDLESTICK_PERIODS.includes(v), {
-    message: `Must be a valid period in seconds: ${CANDLESTICK_PERIODS.join(', ')}`,
-  })
+  .enum(CandlestickPeriod)
   .describe(
     'Candlestick period in seconds (60=1m, 300=5m, 900=15m, 3600=1h, 7200=2h, 14400=4h, 86400=1d, 604800=1w, 2419200=1M)',
   );

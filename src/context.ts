@@ -29,7 +29,7 @@ export interface NadoContext {
   hasSigner: boolean;
 }
 
-export type NadoSignerContext = NadoContext &
+export type NadoContextWithSigner = NadoContext &
   Required<Pick<NadoContext, 'subaccountOwner'>> & {
     hasSigner: true;
   };

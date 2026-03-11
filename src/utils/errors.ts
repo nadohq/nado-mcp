@@ -1,6 +1,7 @@
 /**
- * Redacts values that look like private keys (0x + 64 hex chars) to prevent
- * accidental exposure in error messages surfaced to the LLM or logs.
+ * Redacts 32-byte hex strings (0x + 64 hex chars) to prevent accidental
+ * private-key exposure in error messages. This also redacts order digests and
+ * tx hashes that share the same format — an acceptable trade-off for safety.
  */
 function redactSecrets(text: string): string {
   return text.replace(/0x[0-9a-fA-F]{64}/g, '0x[REDACTED]');

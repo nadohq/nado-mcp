@@ -37,6 +37,7 @@ export interface Market {
   marketName: string;
   type: ProductEngineType;
   typeLabel: 'perp' | 'spot';
+  decimals?: number;
 }
 
 const cache = new Map<ChainEnv, Market[]>();
@@ -83,6 +84,7 @@ export async function getMarkets(
       marketName: entry.marketName,
       type: ProductEngineType.SPOT,
       typeLabel: 'spot',
+      decimals: entry.token.tokenDecimals,
     });
   }
 
@@ -106,7 +108,6 @@ export async function resolveMarket(
     keys: [
       { name: 'symbol', weight: 2 },
       { name: 'marketName', weight: 1.5 },
-      { name: 'typeLabel', weight: 0.5 },
     ],
     threshold: 0.4,
   });
@@ -121,5 +122,26 @@ export async function resolveMarket(
     );
   }
 
-  return results[0].item;
+  return (
+    results.find(
+      (r) =>
+        r.item.typeLabel === 'perp' &&
+        (r.score ?? 0) - (results[0].score ?? 0) < 0.05,
+    ) ?? results[0]
+  ).item;
+}
+
+export async function getTokenDecimals(
+  dataEnv: DataEnv,
+  chainEnv: ChainEnv,
+  productId: number,
+): Promise<number> {
+  const markets = await getMarkets(dataEnv, chainEnv);
+  const market = markets.find((m) => m.productId === productId);
+  if (market?.decimals == null) {
+    throw new Error(
+      `Unknown token decimals for product ${productId} on ${chainEnv}.`,
+    );
+  }
+  return market.decimals;
 }

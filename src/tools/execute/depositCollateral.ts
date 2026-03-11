@@ -5,8 +5,8 @@ import { z } from 'zod';
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
+import { getTokenDecimals } from '../../utils/resolveMarket.js';
 import { ProductIdSchema } from '../../utils/schemas.js';
-import { getTokenDecimals } from '../../utils/tokenDecimals.js';
 
 export function registerDepositCollateral(
   server: McpServer,
@@ -38,7 +38,11 @@ export function registerDepositCollateral(
     async ({ productId, amount }: { productId: number; amount: number }) => {
       requireSigner('deposit_collateral', ctx);
 
-      const decimals = getTokenDecimals(ctx.chainEnv, productId);
+      const decimals = await getTokenDecimals(
+        ctx.dataEnv,
+        ctx.chainEnv,
+        productId,
+      );
       const tokenAmount = addDecimals(amount, decimals);
 
       return handleToolRequest(

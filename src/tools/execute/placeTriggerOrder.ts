@@ -128,6 +128,7 @@ export function registerPlaceTriggerOrder(
         reduceOnly,
         marginMode,
         leverage,
+        triggerType: 'price',
       });
 
       return handleToolRequest(

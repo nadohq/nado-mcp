@@ -102,10 +102,7 @@ export function registerPlaceTwapOrder(
 
       const totalAmount = totalNotional.dividedBy(refPrice).toNumber();
 
-      const expirationSecs = calculateTwapExpiration(
-        numOrders,
-        intervalSeconds,
-      );
+      const expiration = calculateTwapExpiration(numOrders, intervalSeconds);
 
       const twapParams = await buildOrder({
         client: ctx.client,
@@ -119,7 +116,7 @@ export function registerPlaceTwapOrder(
           numOrders,
           slippageFrac: slippagePct / 100,
         },
-        expirationSecs,
+        expiration,
       });
 
       return handleToolRequest(

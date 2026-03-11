@@ -35,11 +35,17 @@ export function registerGetSubaccountSummary(
         'get_subaccount_summary',
         `Failed to fetch summary for ${subaccountOwner}/${subaccountName}.`,
         async () => {
-          const [summary, markets] = await Promise.all([
+          const [summary, isolatedPositions, markets] = await Promise.all([
             ctx.client.subaccount.getSubaccountSummary({
               subaccountOwner,
               subaccountName,
             }),
+            ctx.client.subaccount
+              .getIsolatedPositions({
+                subaccountOwner,
+                subaccountName,
+              })
+              .catch(() => []),
             getMarkets(ctx.dataEnv, ctx.chainEnv).catch(() => []),
           ]);
 
@@ -47,12 +53,22 @@ export function registerGetSubaccountSummary(
             markets.map((m) => [m.productId, m.symbol]),
           );
 
+          const enrichedIsolated = isolatedPositions.map((pos) => ({
+            ...pos,
+            baseBalance: {
+              symbol:
+                symbolByProductId.get(pos.baseBalance.productId) ?? undefined,
+              ...pos.baseBalance,
+            },
+          }));
+
           return {
             ...summary,
             balances: summary.balances.map((b) => ({
               symbol: symbolByProductId.get(b.productId) ?? undefined,
               ...b,
             })),
+            isolatedPositions: enrichedIsolated,
           };
         },
       ),

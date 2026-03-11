@@ -1,4 +1,4 @@
-import type { NadoContext, NadoSignerContext } from '../context.js';
+import type { NadoContext, NadoContextWithSigner } from '../context.js';
 import { ToolExecutionError } from './errors.js';
 
 /**
@@ -8,7 +8,7 @@ import { ToolExecutionError } from './errors.js';
 export function requireSigner(
   toolName: string,
   ctx: NadoContext,
-): asserts ctx is NadoSignerContext {
+): asserts ctx is NadoContextWithSigner {
   if (!ctx.hasSigner) {
     throw new ToolExecutionError(
       toolName,

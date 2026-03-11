@@ -57,7 +57,13 @@ export interface BuildOrderInput {
   marginMode?: 'cross' | 'isolated';
   leverage?: number;
   twap?: { numOrders: number; slippageFrac: number };
-  expirationSecs?: number;
+  /**
+   * Order expiration. For TWAP (trigger service): unix seconds.
+   * For regular orders defaults to Date.now() (ms) — IOC orders fill immediately so the unit doesn't matter.
+   */
+  expiration?: number;
+  /** Set to 'price' for trigger (TP/SL) orders so the appendix is packed correctly. */
+  triggerType?: 'price';
 }
 
 /**
@@ -89,7 +95,8 @@ export async function buildOrder(
     marginMode,
     leverage,
     twap,
-    expirationSecs,
+    expiration: inputExpiration,
+    triggerType,
   } = input;
 
   const allMarkets = await client.market.getAllMarkets();
@@ -98,11 +105,12 @@ export async function buildOrder(
   const priceIncrement = market ? market.priceIncrement : new BigNumber(1);
   const sizeIncrement = market ? market.sizeIncrement : new BigNumber(1);
 
-  const signedHuman = side === 'short' ? -amount : amount;
-  const amountX18 = toBigDecimal(addDecimals(signedHuman));
-  const roundedAmountX18 = roundToIncrement(amountX18.abs(), sizeIncrement);
+  const absAmountX18 = roundToIncrement(
+    toBigDecimal(addDecimals(amount)).abs(),
+    sizeIncrement,
+  );
   const signedAmountX18 =
-    side === 'short' ? roundedAmountX18.negated() : roundedAmountX18;
+    side === 'short' ? absAmountX18.negated() : absAmountX18;
 
   const resolvedPrice = await (async () => {
     if (price != null) {
@@ -160,6 +168,7 @@ export async function buildOrder(
       })
     : packOrderAppendix({
         orderExecutionType: input.orderExecutionType,
+        triggerType,
         reduceOnly,
         isolated,
       });
@@ -169,13 +178,18 @@ export async function buildOrder(
     order: {
       price: resolvedPrice,
       amount: signedAmountX18.toFixed(0),
-      expiration: expirationSecs ?? Date.now(),
+      expiration: inputExpiration ?? Date.now(),
       nonce: getOrderNonce(),
       appendix,
     },
   };
 }
 
+/**
+ * Computes a TWAP order expiration timestamp in unix seconds.
+ * The trigger service validates expiration in seconds (not milliseconds).
+ * Adds a 5s buffer so the last sub-order doesn't expire mid-execution.
+ */
 export function calculateTwapExpiration(
   numOrders: number,
   intervalSeconds: number,

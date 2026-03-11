@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ProductEngineType } from '@nadohq/client';
+import { ProductEngineType, removeDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context.js';
@@ -20,6 +20,7 @@ export function registerCloseAllPositions(
         'Close all open perp positions by placing reduce-only market orders for each. ' +
         'Fetches all positions from the subaccount summary and places IOC orders to close each one. ' +
         'Skips positions with zero balance. Optionally filter by product IDs and/or side. ' +
+        'Supports both cross-margin and isolated-margin positions. ' +
         'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         slippagePct: z
@@ -52,33 +53,56 @@ export function registerCloseAllPositions(
     }) => {
       requireSigner('close_all_positions', ctx);
 
-      const summary = await ctx.client.subaccount.getSubaccountSummary({
-        subaccountOwner: ctx.subaccountOwner,
-        subaccountName: ctx.subaccountName,
-      });
+      const [summary, isolatedPositions] = await Promise.all([
+        ctx.client.subaccount.getSubaccountSummary({
+          subaccountOwner: ctx.subaccountOwner,
+          subaccountName: ctx.subaccountName,
+        }),
+        ctx.client.subaccount
+          .getIsolatedPositions({
+            subaccountOwner: ctx.subaccountOwner,
+            subaccountName: ctx.subaccountName,
+          })
+          .catch(() => []),
+      ]);
 
-      const perpPositions = summary.balances.filter((b) => {
-        if (b.type !== ProductEngineType.PERP) return false;
-        const amount = b.amount;
-        if (amount.isZero()) return false;
-        if (productIds && !productIds.includes(b.productId)) return false;
-        if (side === 'long' && amount.isNegative()) return false;
-        if (side === 'short' && amount.isPositive()) return false;
+      const matchesFilter = (
+        productId: number,
+        isPositive: boolean,
+      ): boolean => {
+        if (productIds && !productIds.includes(productId)) return false;
+        if (side === 'long' && !isPositive) return false;
+        if (side === 'short' && isPositive) return false;
         return true;
+      };
+
+      const crossPositions = summary.balances.filter((b) => {
+        if (b.type !== ProductEngineType.PERP) return false;
+        if (b.amount.isZero()) return false;
+        return matchesFilter(b.productId, b.amount.isPositive());
       });
 
-      if (perpPositions.length === 0) {
+      const filteredIsolated = isolatedPositions.filter((p) => {
+        if (p.baseBalance.amount.isZero()) return false;
+        return matchesFilter(
+          p.baseBalance.productId,
+          p.baseBalance.amount.isPositive(),
+        );
+      });
+
+      if (crossPositions.length === 0 && filteredIsolated.length === 0) {
         throw new Error(
-          'No open perp positions found. Use get_subaccount_summary to verify.',
+          'No open perp positions found (checked both cross and isolated margin). ' +
+            'Use get_subaccount_summary to verify.',
         );
       }
 
-      const orders = await Promise.all(
-        perpPositions.map(async (position) => {
+      const crossOrders = await Promise.all(
+        crossPositions.map(async (position) => {
           const positionAmount = position.amount;
           const isLong = positionAmount.isPositive();
           const closeSide = isLong ? ('short' as const) : ('long' as const);
-          const absAmount = positionAmount.abs().toNumber();
+          const absAmount = removeDecimals(positionAmount.abs()).toNumber();
 
           const orderParams = await buildOrder({
             client: ctx.client,
@@ -101,27 +125,71 @@ export function registerCloseAllPositions(
         }),
       );
 
+      const isolatedOrders = await Promise.all(
+        filteredIsolated.map(async (pos) => {
+          const positionAmount = pos.baseBalance.amount;
+          const isLong = positionAmount.isPositive();
+          const closeSide = isLong ? ('short' as const) : ('long' as const);
+          const absAmount = removeDecimals(positionAmount.abs()).toNumber();
+
+          const oraclePrice = Number(pos.baseBalance.oraclePrice);
+          const margin = removeDecimals(pos.quoteBalance.amount).toNumber();
+          const notional = absAmount * oraclePrice;
+          const leverage = margin > 0 ? Math.max(1, notional / margin) : 10;
+
+          const orderParams = await buildOrder({
+            client: ctx.client,
+            productId: pos.baseBalance.productId,
+            side: closeSide,
+            amount: absAmount,
+            slippagePct,
+            orderExecutionType: 'ioc',
+            reduceOnly: true,
+            marginMode: 'isolated',
+            leverage,
+          });
+
+          return {
+            ...orderParams,
+            order: {
+              subaccountOwner: ctx.subaccountOwner,
+              subaccountName: ctx.subaccountName,
+              ...orderParams.order,
+            },
+          };
+        }),
+      );
+
+      const allOrders = [...crossOrders, ...isolatedOrders];
+
       return handleToolRequest(
         'close_all_positions',
         'Failed to close all positions',
         async () => {
           const result = await ctx.client.market.placeOrders({
-            orders,
+            orders: allOrders,
           });
+
+          const crossSummary = crossPositions.map((p) => ({
+            productId: p.productId,
+            marginMode: 'cross' as const,
+            side: p.amount.isPositive() ? 'long' : 'short',
+            size: removeDecimals(p.amount.abs()).toNumber(),
+          }));
+
+          const isolatedSummary = filteredIsolated.map((p) => ({
+            productId: p.baseBalance.productId,
+            marginMode: 'isolated' as const,
+            side: p.baseBalance.amount.isPositive() ? 'long' : 'short',
+            size: removeDecimals(p.baseBalance.amount.abs()).toNumber(),
+          }));
 
           return {
             ...result,
             summary: {
-              positionsClosed: perpPositions.length,
+              positionsClosed: allOrders.length,
               slippagePct: `${slippagePct}%`,
-              positions: perpPositions.map((p) => {
-                const amount = p.amount;
-                return {
-                  productId: p.productId,
-                  side: amount.isPositive() ? 'long' : 'short',
-                  size: amount.abs().toNumber(),
-                };
-              }),
+              positions: [...crossSummary, ...isolatedSummary],
             },
           };
         },

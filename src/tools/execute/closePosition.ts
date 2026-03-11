@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ProductEngineType } from '@nadohq/client';
+import { ProductEngineType, removeDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context.js';
@@ -20,6 +20,7 @@ export function registerClosePosition(
         'Close an open position by placing a reduce-only market order in the opposite direction. ' +
         'Fetches the current position size automatically and places a full close. ' +
         'Only works for perp positions with a non-zero balance. ' +
+        'Supports both cross-margin and isolated-margin positions (checks cross first, then isolated). ' +
         'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
       inputSchema: {
         productId: ProductIdSchema.describe(
@@ -44,31 +45,92 @@ export function registerClosePosition(
     }) => {
       requireSigner('close_position', ctx);
 
-      const summary = await ctx.client.subaccount.getSubaccountSummary({
-        subaccountOwner: ctx.subaccountOwner,
-        subaccountName: ctx.subaccountName,
-      });
+      const [summary, isolatedPositions] = await Promise.all([
+        ctx.client.subaccount.getSubaccountSummary({
+          subaccountOwner: ctx.subaccountOwner,
+          subaccountName: ctx.subaccountName,
+        }),
+        ctx.client.subaccount
+          .getIsolatedPositions({
+            subaccountOwner: ctx.subaccountOwner,
+            subaccountName: ctx.subaccountName,
+          })
+          .catch(() => []),
+      ]);
 
-      const balance = summary.balances.find(
+      const crossBalance = summary.balances.find(
         (b) => b.productId === productId && b.type === ProductEngineType.PERP,
       );
+      const hasCrossPosition = crossBalance && !crossBalance.amount.isZero();
 
-      if (!balance) {
+      const isolatedPos = isolatedPositions.find(
+        (p) =>
+          p.baseBalance.productId === productId &&
+          !p.baseBalance.amount.isZero(),
+      );
+
+      if (!hasCrossPosition && !isolatedPos) {
         throw new Error(
-          `No perp position found for product ${productId}. Use get_subaccount_summary to check current positions.`,
+          `No open position found for product ${productId} (checked both cross and isolated margin). ` +
+            'Use get_subaccount_summary to check current positions.',
         );
       }
 
-      const positionAmount = balance.amount;
-      if (positionAmount.isZero()) {
-        throw new Error(
-          `Position for product ${productId} has zero size. Nothing to close.`,
+      if (hasCrossPosition) {
+        const positionAmount = crossBalance.amount;
+        const isLong = positionAmount.isPositive();
+        const closeSide = isLong ? ('short' as const) : ('long' as const);
+        const absAmount = removeDecimals(positionAmount.abs()).toNumber();
+
+        const orderParams = await buildOrder({
+          client: ctx.client,
+          productId,
+          side: closeSide,
+          amount: absAmount,
+          slippagePct,
+          orderExecutionType: 'ioc',
+          reduceOnly: true,
+        });
+
+        return handleToolRequest(
+          'close_position',
+          `Failed to close position for product ${productId}`,
+          async () => {
+            const result = await ctx.client.market.placeOrder({
+              ...orderParams,
+              order: {
+                subaccountOwner: ctx.subaccountOwner,
+                subaccountName: ctx.subaccountName,
+                ...orderParams.order,
+              },
+            });
+
+            return {
+              ...result,
+              summary: {
+                productId,
+                marginMode: 'cross',
+                closedSide: isLong ? 'long' : 'short',
+                closedAmount: absAmount,
+                orderSide: closeSide,
+                slippagePct: `${slippagePct}%`,
+              },
+            };
+          },
         );
       }
 
+      const positionAmount = isolatedPos!.baseBalance.amount;
       const isLong = positionAmount.isPositive();
-      const closeSide = isLong ? 'short' : 'long';
-      const absAmount = positionAmount.abs().toNumber();
+      const closeSide = isLong ? ('short' as const) : ('long' as const);
+      const absAmount = removeDecimals(positionAmount.abs()).toNumber();
+
+      const oraclePrice = Number(isolatedPos!.baseBalance.oraclePrice);
+      const margin = removeDecimals(
+        isolatedPos!.quoteBalance.amount,
+      ).toNumber();
+      const notional = absAmount * oraclePrice;
+      const leverage = margin > 0 ? Math.max(1, notional / margin) : 10;
 
       const orderParams = await buildOrder({
         client: ctx.client,
@@ -78,11 +140,13 @@ export function registerClosePosition(
         slippagePct,
         orderExecutionType: 'ioc',
         reduceOnly: true,
+        marginMode: 'isolated',
+        leverage,
       });
 
       return handleToolRequest(
         'close_position',
-        `Failed to close position for product ${productId}`,
+        `Failed to close isolated position for product ${productId}`,
         async () => {
           const result = await ctx.client.market.placeOrder({
             ...orderParams,
@@ -97,9 +161,11 @@ export function registerClosePosition(
             ...result,
             summary: {
               productId,
+              marginMode: 'isolated',
               closedSide: isLong ? 'long' : 'short',
               closedAmount: absAmount,
               orderSide: closeSide,
+              leverage: leverage.toFixed(2),
               slippagePct: `${slippagePct}%`,
             },
           };
