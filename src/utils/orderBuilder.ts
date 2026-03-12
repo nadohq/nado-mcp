@@ -11,8 +11,6 @@ import {
 } from '@nadohq/client';
 import BigNumber from 'bignumber.js';
 
-import type { BalanceSide } from './schemas.js';
-
 const TIF_TO_EXECUTION_TYPE: Record<string, OrderExecutionType> = {
   gtc: 'default',
   ioc: 'ioc',
@@ -45,10 +43,116 @@ export interface BuiltOrderParams {
   };
 }
 
-export interface BuildOrderInput {
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+interface MarketData {
+  priceIncrement: BigNumber;
+  sizeIncrement: BigNumber;
+}
+
+async function resolveMarketData(
+  client: NadoClient,
+  productId: number,
+): Promise<MarketData> {
+  const allMarkets = await client.market.getAllMarkets();
+  const market = allMarkets.find((m) => m.productId === productId);
+  if (!market) {
+    throw new Error(
+      `Unknown product ${productId}. Use get_all_markets to find valid product IDs.`,
+    );
+  }
+  return {
+    priceIncrement: market.priceIncrement,
+    sizeIncrement: market.sizeIncrement,
+  };
+}
+
+interface ResolvedAmount {
+  absAmountX18: BigNumber;
+  signedAmountX18: BigNumber;
+}
+
+function resolveAmount(
+  amount: number,
+  sizeIncrement: BigNumber,
+): ResolvedAmount {
+  const isLong = amount > 0;
+  const absAmountX18 = roundToIncrement(
+    toBigDecimal(addDecimals(Math.abs(amount))),
+    sizeIncrement,
+  );
+  const signedAmountX18 = isLong ? absAmountX18 : absAmountX18.negated();
+  return { absAmountX18, signedAmountX18 };
+}
+
+async function resolvePrice(
+  client: NadoClient,
+  productId: number,
+  isLong: boolean,
+  slippagePct: number,
+  priceIncrement: BigNumber,
+  price?: number,
+): Promise<string> {
+  if (price != null) {
+    return roundToIncrement(new BigNumber(price), priceIncrement).toFixed();
+  }
+
+  const marketPrice = await client.market.getLatestMarketPrice({ productId });
+  const slippageFrac = slippagePct / 100;
+
+  if (isLong) {
+    const bidPrice = marketPrice.bid;
+    if (bidPrice.lte(0)) {
+      throw new Error(
+        `No bid price available for product ${productId}. Cannot place market buy order.`,
+      );
+    }
+    return roundToIncrement(
+      bidPrice.times(1 + slippageFrac),
+      priceIncrement,
+    ).toFixed();
+  }
+
+  const askPrice = marketPrice.ask;
+  if (askPrice.lte(0)) {
+    throw new Error(
+      `No ask price available for product ${productId}. Cannot place market sell order.`,
+    );
+  }
+  return roundToIncrement(
+    askPrice.times(1 - slippageFrac),
+    priceIncrement,
+  ).toFixed();
+}
+
+function resolveIsolatedMargin(
+  marginMode: 'cross' | 'isolated' | undefined,
+  reduceOnly: boolean,
+  leverage: number | undefined,
+  amount: number,
+  resolvedPrice: string,
+): { margin: BigDecimalish } | undefined {
+  if (marginMode !== 'isolated') return undefined;
+  if (reduceOnly) return { margin: 0 };
+  if (leverage == null) {
+    throw new Error('leverage is required when marginMode is "isolated".');
+  }
+  return {
+    margin: addDecimals(Math.abs((amount * Number(resolvedPrice)) / leverage)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Builders
+// ---------------------------------------------------------------------------
+
+/** Input for engine-path orders (limit / market). */
+export interface BuildEngineOrderInput {
   client: NadoClient;
   productId: number;
-  side: BalanceSide;
+  /** Signed amount in human units: positive = long, negative = short. */
   amount: number;
   price?: number;
   slippagePct?: number;
@@ -56,129 +160,195 @@ export interface BuildOrderInput {
   reduceOnly: boolean;
   marginMode?: 'cross' | 'isolated';
   leverage?: number;
-  twap?: { numOrders: number; slippageFrac: number };
-  /**
-   * Order expiration. For TWAP (trigger service): unix seconds.
-   * For regular orders defaults to Date.now() (ms) — IOC orders fill immediately so the unit doesn't matter.
-   */
-  expiration?: number;
-  /** Set to 'price' for trigger (TP/SL) orders so the appendix is packed correctly. */
-  triggerType?: 'price';
 }
 
 /**
- * Resolves price/amount (fetching market data as needed) and builds the
- * final order params ready for submission.
- *
- * Price resolution:
- * - Limit order: rounds the given price to priceIncrement
- * - Market order (price omitted): uses top-of-book + slippage
- *
- * Amount: converts human amount to x18 via addDecimals, rounds to sizeIncrement.
- *
- * Isolated margin: when `marginMode` is 'isolated', `leverage` is required and
- * the margin is computed from the resolved price.
- *
- * TWAP: pass `twap` and `expirationSecs`; `orderExecutionType` is forced to 'ioc'.
+ * Builds params for a regular engine order (limit or market).
+ * Used by `placeOrder` and `cancelAndPlace`.
  */
-export async function buildOrder(
-  input: BuildOrderInput,
+export async function buildEngineOrder(
+  input: BuildEngineOrderInput,
 ): Promise<BuiltOrderParams> {
   const {
     client,
     productId,
-    side,
     amount,
     price,
     slippagePct = DEFAULT_SLIPPAGE_PCT,
+    orderExecutionType,
     reduceOnly,
     marginMode,
     leverage,
-    twap,
-    expiration: inputExpiration,
-    triggerType,
   } = input;
 
-  const allMarkets = await client.market.getAllMarkets();
-  const market = allMarkets.find((m) => m.productId === productId);
-
-  const priceIncrement = market ? market.priceIncrement : new BigNumber(1);
-  const sizeIncrement = market ? market.sizeIncrement : new BigNumber(1);
-
-  const absAmountX18 = roundToIncrement(
-    toBigDecimal(addDecimals(amount)).abs(),
-    sizeIncrement,
+  const isLong = amount > 0;
+  const { priceIncrement, sizeIncrement } = await resolveMarketData(
+    client,
+    productId,
   );
-  const signedAmountX18 =
-    side === 'short' ? absAmountX18.negated() : absAmountX18;
+  const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
+  const resolvedPrice = await resolvePrice(
+    client,
+    productId,
+    isLong,
+    slippagePct,
+    priceIncrement,
+    price,
+  );
+  const isolated = resolveIsolatedMargin(
+    marginMode,
+    reduceOnly,
+    leverage,
+    amount,
+    resolvedPrice,
+  );
 
-  const resolvedPrice = await (async () => {
-    if (price != null) {
-      return roundToIncrement(new BigNumber(price), priceIncrement).toFixed();
-    }
-
-    const marketPrice = await client.market.getLatestMarketPrice({
-      productId,
-    });
-    const slippageMultiplier = 1 + slippagePct / 100;
-
-    if (side === 'long') {
-      const bidPrice = marketPrice.bid;
-      if (bidPrice.lte(0)) {
-        throw new Error(
-          `No bid price available for product ${productId}. Cannot place market buy order.`,
-        );
-      }
-      return roundToIncrement(
-        bidPrice.times(slippageMultiplier),
-        priceIncrement,
-      ).toFixed();
-    }
-
-    const askPrice = marketPrice.ask;
-    if (askPrice.lte(0)) {
-      throw new Error(
-        `No ask price available for product ${productId}. Cannot place market sell order.`,
-      );
-    }
-    return roundToIncrement(
-      askPrice.dividedBy(slippageMultiplier),
-      priceIncrement,
-    ).toFixed();
-  })();
-
-  const isolated = (() => {
-    if (marginMode !== 'isolated') return undefined;
-    if (leverage == null) {
-      throw new Error('leverage is required when marginMode is "isolated".');
-    }
-    return {
-      margin: addDecimals(
-        Math.abs((amount * Number(resolvedPrice)) / leverage),
-      ),
-    };
-  })();
-
-  const appendix = twap
-    ? packOrderAppendix({
-        orderExecutionType: 'ioc',
-        triggerType: 'twap',
-        reduceOnly,
-        twap,
-      })
-    : packOrderAppendix({
-        orderExecutionType: input.orderExecutionType,
-        triggerType,
-        reduceOnly,
-        isolated,
-      });
+  const appendix = packOrderAppendix({
+    orderExecutionType,
+    reduceOnly,
+    isolated,
+  });
 
   return {
     productId,
     order: {
       price: resolvedPrice,
       amount: signedAmountX18.toFixed(0),
-      expiration: inputExpiration ?? Date.now(),
+      expiration: Date.now(),
+      nonce: getOrderNonce(),
+      appendix,
+    },
+  };
+}
+
+/** Input for closing a position (always IOC + reduce-only). */
+export interface BuildCloseOrderInput {
+  client: NadoClient;
+  productId: number;
+  /** Signed amount: negative to close a long, positive to close a short. */
+  amount: number;
+  slippagePct?: number;
+  marginMode?: 'cross' | 'isolated';
+}
+
+/**
+ * Builds params for a close-position order.
+ * Always IOC + reduce-only; isolated margin uses `margin: 0`.
+ */
+export async function buildCloseOrder(
+  input: BuildCloseOrderInput,
+): Promise<BuiltOrderParams> {
+  const {
+    client,
+    productId,
+    amount,
+    slippagePct = DEFAULT_SLIPPAGE_PCT,
+    marginMode,
+  } = input;
+
+  const isLong = amount > 0;
+  const { priceIncrement, sizeIncrement } = await resolveMarketData(
+    client,
+    productId,
+  );
+  const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
+  const resolvedPrice = await resolvePrice(
+    client,
+    productId,
+    isLong,
+    slippagePct,
+    priceIncrement,
+  );
+  const isolated = marginMode === 'isolated' ? { margin: 0 } : undefined;
+
+  const appendix = packOrderAppendix({
+    orderExecutionType: 'ioc',
+    reduceOnly: true,
+    isolated,
+  });
+
+  return {
+    productId,
+    order: {
+      price: resolvedPrice,
+      amount: signedAmountX18.toFixed(0),
+      expiration: Date.now(),
+      nonce: getOrderNonce(),
+      appendix,
+    },
+  };
+}
+
+/** Input for a price-triggered order (TP/SL). */
+export interface BuildPriceTriggerOrderInput {
+  client: NadoClient;
+  productId: number;
+  /** Signed amount in human units: positive = long, negative = short. */
+  amount: number;
+  /** Limit price. Omit for a stop-market order. */
+  price?: number;
+  slippagePct?: number;
+  reduceOnly: boolean;
+  marginMode?: 'cross' | 'isolated';
+  leverage?: number;
+}
+
+/**
+ * Builds params for a price-trigger order (stop-loss / take-profit).
+ * Automatically sets `triggerType: 'price'` in the appendix.
+ * Stop-market (price omitted) → IOC; stop-limit (price given) → default.
+ */
+export async function buildPriceTriggerOrder(
+  input: BuildPriceTriggerOrderInput,
+): Promise<BuiltOrderParams> {
+  const {
+    client,
+    productId,
+    amount,
+    price,
+    slippagePct = DEFAULT_SLIPPAGE_PCT,
+    reduceOnly,
+    marginMode,
+    leverage,
+  } = input;
+
+  const isLong = amount > 0;
+  const { priceIncrement, sizeIncrement } = await resolveMarketData(
+    client,
+    productId,
+  );
+  const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
+  const resolvedPrice = await resolvePrice(
+    client,
+    productId,
+    isLong,
+    slippagePct,
+    priceIncrement,
+    price,
+  );
+  const isolated = resolveIsolatedMargin(
+    marginMode,
+    reduceOnly,
+    leverage,
+    amount,
+    resolvedPrice,
+  );
+
+  const executionType = price == null ? 'ioc' : 'default';
+
+  const appendix = packOrderAppendix({
+    orderExecutionType: executionType,
+    triggerType: 'price',
+    reduceOnly,
+    isolated,
+  });
+
+  return {
+    productId,
+    order: {
+      price: resolvedPrice,
+      amount: signedAmountX18.toFixed(0),
+      expiration: Date.now(),
       nonce: getOrderNonce(),
       appendix,
     },

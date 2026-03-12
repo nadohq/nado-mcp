@@ -3,7 +3,10 @@ import { z } from 'zod';
 
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
+import {
+  DEFAULT_SLIPPAGE_PCT,
+  buildPriceTriggerOrder,
+} from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import {
   type BalanceSide,
@@ -11,6 +14,7 @@ import {
   type MarginMode,
   MarginModeSchema,
   ProductIdSchema,
+  SAFETY_DISCLAIMER,
 } from '../../utils/schemas.js';
 
 const TriggerTypeSchema = z
@@ -38,7 +42,7 @@ export function registerPlaceTriggerOrder(
         'Place a trigger order (stop-loss, take-profit, or conditional) that executes when a price condition is met. ' +
         'Use oracle_price_above/below for standard TP/SL. Omit price for a stop-market order; provide price for a stop-limit order. ' +
         'Typically used with reduceOnly=true for TP/SL on existing positions. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         productId: ProductIdSchema,
         side: BalanceSideSchema,
@@ -115,20 +119,15 @@ export function registerPlaceTriggerOrder(
     }) => {
       requireSigner('place_trigger_order', ctx);
 
-      const executionType = price == null ? 'ioc' : 'default';
-
-      const orderParams = await buildOrder({
+      const orderParams = await buildPriceTriggerOrder({
         client: ctx.client,
         productId,
-        side,
-        amount,
+        amount: side === 'short' ? -amount : amount,
         price,
         slippagePct,
-        orderExecutionType: executionType,
         reduceOnly,
         marginMode,
         leverage,
-        triggerType: 'price',
       });
 
       return handleToolRequest(

@@ -6,7 +6,7 @@ import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { getTokenDecimals } from '../../utils/resolveMarket.js';
-import { ProductIdSchema } from '../../utils/schemas.js';
+import { ProductIdSchema, SAFETY_DISCLAIMER } from '../../utils/schemas.js';
 
 export function registerDepositCollateral(
   server: McpServer,
@@ -21,7 +21,7 @@ export function registerDepositCollateral(
         'This is an on-chain transaction that requires gas (native token for fees). ' +
         'Automatically approves the token spending allowance before depositing. ' +
         'Use get_all_markets to find spot product IDs (e.g. 0 for USDT0). ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         productId: ProductIdSchema.describe(
           'Spot product ID to deposit (e.g. 0 for USDT0)',

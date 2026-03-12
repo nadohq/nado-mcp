@@ -5,7 +5,10 @@ import { z } from 'zod';
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { SubaccountNameSchema } from '../../utils/schemas.js';
+import {
+  SAFETY_DISCLAIMER,
+  SubaccountNameSchema,
+} from '../../utils/schemas.js';
 
 export function registerTransferQuote(
   server: McpServer,
@@ -19,7 +22,7 @@ export function registerTransferQuote(
         'Transfer USDT0 between subaccounts under the same wallet. ' +
         'Use this for moving funds between cross and isolated subaccounts, or adjusting isolated position margin. ' +
         'Use list_subaccounts to see available subaccounts. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         amount: z
           .number()

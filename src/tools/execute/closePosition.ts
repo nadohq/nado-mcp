@@ -4,9 +4,12 @@ import { z } from 'zod';
 
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
+import {
+  DEFAULT_SLIPPAGE_PCT,
+  buildCloseOrder,
+} from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { ProductIdSchema } from '../../utils/schemas.js';
+import { ProductIdSchema, SAFETY_DISCLAIMER } from '../../utils/schemas.js';
 
 export function registerClosePosition(
   server: McpServer,
@@ -21,7 +24,7 @@ export function registerClosePosition(
         'Fetches the current position size automatically and places a full close. ' +
         'Only works for perp positions with a non-zero balance. ' +
         'Supports both cross-margin and isolated-margin positions (checks cross first, then isolated). ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         productId: ProductIdSchema.describe(
           'Product ID of the position to close',
@@ -77,19 +80,13 @@ export function registerClosePosition(
       }
 
       if (hasCrossPosition) {
-        const positionAmount = crossBalance.amount;
-        const isLong = positionAmount.isPositive();
-        const closeSide = isLong ? ('short' as const) : ('long' as const);
-        const absAmount = removeDecimals(positionAmount.abs()).toNumber();
+        const size = removeDecimals(crossBalance.amount).toNumber();
 
-        const orderParams = await buildOrder({
+        const orderParams = await buildCloseOrder({
           client: ctx.client,
           productId,
-          side: closeSide,
-          amount: absAmount,
+          amount: -size,
           slippagePct,
-          orderExecutionType: 'ioc',
-          reduceOnly: true,
         });
 
         return handleToolRequest(
@@ -110,9 +107,8 @@ export function registerClosePosition(
               summary: {
                 productId,
                 marginMode: 'cross',
-                closedSide: isLong ? 'long' : 'short',
-                closedAmount: absAmount,
-                orderSide: closeSide,
+                closedSide: size > 0 ? 'long' : 'short',
+                closedSize: Math.abs(size),
                 slippagePct: `${slippagePct}%`,
               },
             };
@@ -120,28 +116,14 @@ export function registerClosePosition(
         );
       }
 
-      const positionAmount = isolatedPos!.baseBalance.amount;
-      const isLong = positionAmount.isPositive();
-      const closeSide = isLong ? ('short' as const) : ('long' as const);
-      const absAmount = removeDecimals(positionAmount.abs()).toNumber();
+      const size = removeDecimals(isolatedPos!.baseBalance.amount).toNumber();
 
-      const oraclePrice = Number(isolatedPos!.baseBalance.oraclePrice);
-      const margin = removeDecimals(
-        isolatedPos!.quoteBalance.amount,
-      ).toNumber();
-      const notional = absAmount * oraclePrice;
-      const leverage = margin > 0 ? Math.max(1, notional / margin) : 10;
-
-      const orderParams = await buildOrder({
+      const orderParams = await buildCloseOrder({
         client: ctx.client,
         productId,
-        side: closeSide,
-        amount: absAmount,
+        amount: -size,
         slippagePct,
-        orderExecutionType: 'ioc',
-        reduceOnly: true,
         marginMode: 'isolated',
-        leverage,
       });
 
       return handleToolRequest(
@@ -162,10 +144,8 @@ export function registerClosePosition(
             summary: {
               productId,
               marginMode: 'isolated',
-              closedSide: isLong ? 'long' : 'short',
-              closedAmount: absAmount,
-              orderSide: closeSide,
-              leverage: leverage.toFixed(2),
+              closedSide: size > 0 ? 'long' : 'short',
+              closedSize: Math.abs(size),
               slippagePct: `${slippagePct}%`,
             },
           };

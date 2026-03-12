@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
+import { SAFETY_DISCLAIMER } from '../../utils/schemas.js';
 
 export function registerMintNlp(server: McpServer, ctx: NadoContext): void {
   server.registerTool(
@@ -15,7 +16,7 @@ export function registerMintNlp(server: McpServer, ctx: NadoContext): void {
         'Deposit quote (USDT0) into the NLP vault to mint NLP tokens. ' +
         'Use get_nlp_max_mint_burn to check the maximum deposit amount. ' +
         'Minted NLP tokens have a lock-up period before they can be burned. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         quoteAmount: z
           .number()

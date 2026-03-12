@@ -5,7 +5,7 @@ import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import {
   DEFAULT_SLIPPAGE_PCT,
-  buildOrder,
+  buildEngineOrder,
   toExecutionType,
 } from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
@@ -16,6 +16,7 @@ import {
   MarginModeSchema,
   ProductIdSchema,
   ProductIdsSchema,
+  SAFETY_DISCLAIMER,
   type TimeInForce,
   TimeInForceSchema,
 } from '../../utils/schemas.js';
@@ -32,7 +33,7 @@ export function registerCancelAndPlace(
         'Atomically cancel one or more orders and place a new order in a single operation. ' +
         'Use this to modify an existing order without risk of partial fills between cancel and place. ' +
         'Use get_open_orders to find order digests for cancellation. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         cancelProductIds: ProductIdsSchema.describe(
           'Product IDs of the orders to cancel (must match cancelDigests by index)',
@@ -108,11 +109,10 @@ export function registerCancelAndPlace(
         ? 'ioc'
         : toExecutionType(timeInForce);
 
-      const orderParams = await buildOrder({
+      const orderParams = await buildEngineOrder({
         client: ctx.client,
         productId,
-        side,
-        amount,
+        amount: side === 'short' ? -amount : amount,
         price,
         slippagePct,
         orderExecutionType: executionType,

@@ -14,6 +14,7 @@ import {
   type BalanceSide,
   BalanceSideSchema,
   ProductIdSchema,
+  SAFETY_DISCLAIMER,
 } from '../../utils/schemas.js';
 
 function roundToIncrement(value: BigNumber, increment: BigNumber): BigNumber {
@@ -22,35 +23,6 @@ function roundToIncrement(value: BigNumber, increment: BigNumber): BigNumber {
     .dividedBy(increment)
     .integerValue(BigNumber.ROUND_DOWN)
     .times(increment);
-}
-
-/**
- * Computes per-order amounts for a TWAP, rounded to the market's size
- * increment. Any rounding remainder is redistributed across orders so the
- * sum exactly equals the intended total.
- */
-function computeTwapAmounts(
-  totalAmount: BigNumber,
-  numOrders: number,
-  sizeIncrement: BigNumber,
-): BigNumber[] {
-  const perOrder = totalAmount.dividedBy(numOrders);
-  const rounded = Array.from({ length: numOrders }, () =>
-    roundToIncrement(perOrder, sizeIncrement),
-  );
-
-  if (!sizeIncrement.isZero()) {
-    let diff = totalAmount.minus(
-      rounded.reduce((s, a) => s.plus(a), new BigNumber(0)),
-    );
-    for (let i = 0; i < numOrders && !diff.isZero(); i++) {
-      const adj = diff.isPositive() ? sizeIncrement : sizeIncrement.negated();
-      rounded[i] = rounded[i].plus(adj);
-      diff = diff.minus(adj);
-    }
-  }
-
-  return rounded;
 }
 
 export function registerPlaceTwapOrder(
@@ -62,18 +34,19 @@ export function registerPlaceTwapOrder(
     {
       title: 'Place TWAP Order',
       description:
-        'Place a TWAP (Time-Weighted Average Price) order that splits a total amount into equal orders executed at regular intervals. ' +
+        'Place a TWAP (Time-Weighted Average Price) order that splits a total base amount into equal orders executed at regular intervals. ' +
+        'Amount is in base asset units (e.g. 0.1 for 0.1 BTC), NOT USD notional. ' +
         'Uses cross margin only (TWAP cannot use isolated margin). ' +
         'Each order is executed as an IOC market order with oracle-based slippage protection. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         productId: ProductIdSchema,
         side: BalanceSideSchema,
-        amountPerOrder: z
+        amount: z
           .number()
           .positive()
           .describe(
-            'Notional USD value per TWAP order (e.g. 50 for $50 per order)',
+            'Total order size in base asset units (e.g. 0.1 for 0.1 BTC). Split evenly across all sub-orders.',
           ),
         intervalSeconds: z
           .number()
@@ -102,7 +75,7 @@ export function registerPlaceTwapOrder(
     async ({
       productId,
       side,
-      amountPerOrder,
+      amount,
       intervalSeconds,
       durationMinutes,
       slippagePct,
@@ -110,7 +83,7 @@ export function registerPlaceTwapOrder(
     }: {
       productId: number;
       side: BalanceSide;
-      amountPerOrder: number;
+      amount: number;
       intervalSeconds: number;
       durationMinutes: number;
       slippagePct: number;
@@ -118,7 +91,6 @@ export function registerPlaceTwapOrder(
     }) => {
       requireSigner('place_twap_order', ctx);
 
-      // Frontend: floor(duration / interval) + 1  (first order is immediate)
       const numOrders =
         Math.floor((durationMinutes * 60) / intervalSeconds) + 1;
       if (numOrders < 2) {
@@ -135,54 +107,31 @@ export function registerPlaceTwapOrder(
       const marketPrice = await ctx.client.market.getLatestMarketPrice({
         productId,
       });
-      const refPrice = side === 'long' ? marketPrice.ask : marketPrice.bid;
+      const isLong = side === 'long';
+      const refPrice = isLong ? marketPrice.ask : marketPrice.bid;
       if (refPrice.lte(0)) {
         throw new Error(
-          `No ${side === 'long' ? 'ask' : 'bid'} price available for product ${productId}.`,
+          `No ${isLong ? 'ask' : 'bid'} price available for product ${productId}.`,
         );
       }
 
-      const totalNotional = toBigDecimal(amountPerOrder).times(numOrders);
-      const totalHumanAmount = totalNotional.dividedBy(refPrice);
-
-      // Compute per-order amounts in human units, rounded to sizeIncrement,
-      // then convert each to x18.
-      const sizeIncrementHuman = market
-        ? toBigDecimal(market.sizeIncrement).dividedBy(toBigDecimal(10).pow(18))
-        : new BigNumber(0);
-
-      const perOrderAmounts = computeTwapAmounts(
-        totalHumanAmount,
-        numOrders,
-        sizeIncrementHuman,
+      const perOrderAmount = roundToIncrement(
+        toBigDecimal(addDecimals(amount / numOrders)),
+        sizeIncrement,
       );
 
-      // x18 signed amounts for the trigger criteria
-      const amountsX18 = perOrderAmounts.map((amt) => {
-        const x18 = roundToIncrement(
-          toBigDecimal(addDecimals(amt.abs().toNumber())),
-          sizeIncrement,
-        );
-        return side === 'short' ? x18.negated() : x18;
-      });
+      const perOrderSigned = isLong ? perOrderAmount : perOrderAmount.negated();
+      const totalAmountX18 = perOrderSigned.times(numOrders);
 
-      // Total amount = sum of per-order amounts (ensures no mismatch)
-      const totalAmountX18 = amountsX18.reduce(
-        (sum, a) => sum.plus(a),
-        new BigNumber(0),
-      );
-
-      // Frontend: Long → price * 1000, Short → 0 (permissive price for oracle-based slippage)
-      const orderPrice =
-        side === 'long'
-          ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed()
-          : '0';
+      const orderPrice = isLong
+        ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed()
+        : '0';
 
       const expiration = calculateTwapExpiration(numOrders, intervalSeconds);
 
       const appendix = packOrderAppendix({
         orderExecutionType: 'ioc',
-        triggerType: 'twap_custom_amounts',
+        triggerType: 'twap',
         reduceOnly,
         twap: {
           numOrders,
@@ -212,7 +161,6 @@ export function registerPlaceTwapOrder(
                   type: 'time' as const,
                   criteria: {
                     interval: intervalSeconds,
-                    amounts: amountsX18.map((a) => a.toFixed(0)),
                   },
                 },
               },
@@ -224,8 +172,10 @@ export function registerPlaceTwapOrder(
             summary: {
               side,
               productId,
-              totalNotional: totalNotional.toFixed(2),
-              amountPerOrder: toBigDecimal(amountPerOrder).toFixed(2),
+              totalAmount: amount,
+              perOrderAmount: perOrderAmount
+                .dividedBy(toBigDecimal(10).pow(18))
+                .toFixed(),
               numOrders,
               intervalSeconds,
               totalDuration: `${durationMinutes} minutes`,

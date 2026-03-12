@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
+import { SAFETY_DISCLAIMER } from '../../utils/schemas.js';
 
 export function registerLinkSigner(server: McpServer, ctx: NadoContext): void {
   server.registerTool(
@@ -14,7 +15,7 @@ export function registerLinkSigner(server: McpServer, ctx: NadoContext): void {
       description:
         'Link a signer address to a subaccount, allowing it to sign transactions on behalf of the subaccount (1-click trading). ' +
         'To revoke a linked signer, pass the zero address (0x0000000000000000000000000000000000000000). ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         signer: z
           .string()

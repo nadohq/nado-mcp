@@ -62,3 +62,6 @@ export const TimeInForceSchema = z
   );
 
 export type TimeInForce = z.infer<typeof TimeInForceSchema>;
+
+export const SAFETY_DISCLAIMER =
+  'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.';

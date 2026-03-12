@@ -73,7 +73,7 @@ You MUST NEVER call any write tool until the user has explicitly confirmed the a
 
 ### Write Operations (ALL require confirmation — no exceptions)
 
-- **Orders**: place_order, place_scaled_orders, place_trigger_order, place_twap_order, cancel_and_place
+- **Orders**: place_order (supports batching), place_trigger_order, place_twap_order, cancel_and_place
 - **Cancels**: cancel_orders, cancel_product_orders, cancel_trigger_orders, cancel_trigger_product_orders
 - **Positions**: close_position, close_all_positions
 - **Funds**: deposit_collateral, withdraw_collateral, transfer_quote

@@ -1,5 +1,4 @@
 import { type ChainEnv, ProductEngineType } from '@nadohq/client';
-import Fuse from 'fuse.js';
 
 import { type DataEnv, getMetadataUrl } from '../dataEnv.js';
 
@@ -36,7 +35,6 @@ export interface Market {
   symbol: string;
   marketName: string;
   type: ProductEngineType;
-  typeLabel: 'perp' | 'spot';
   decimals?: number;
 }
 
@@ -73,7 +71,6 @@ export async function getMarkets(
       symbol: entry.symbol,
       marketName: entry.marketName,
       type: ProductEngineType.PERP,
-      typeLabel: 'perp',
     });
   }
 
@@ -83,52 +80,12 @@ export async function getMarkets(
       symbol: entry.token.symbol,
       marketName: entry.marketName,
       type: ProductEngineType.SPOT,
-      typeLabel: 'spot',
       decimals: entry.token.tokenDecimals,
     });
   }
 
   cache.set(chainEnv, markets);
   return markets;
-}
-
-/**
- * Resolves a human-readable market query (e.g. "bitcoin", "eth", "SOL")
- * to a concrete product via fuzzy search.
- * Prefers perp markets over spot when ambiguous.
- */
-export async function resolveMarket(
-  dataEnv: DataEnv,
-  chainEnv: ChainEnv,
-  query: string,
-): Promise<Market> {
-  const markets = await getMarkets(dataEnv, chainEnv);
-
-  const fuse = new Fuse(markets, {
-    keys: [
-      { name: 'symbol', weight: 2 },
-      { name: 'marketName', weight: 1.5 },
-    ],
-    threshold: 0.4,
-  });
-
-  const results = fuse.search(query);
-  if (results.length === 0) {
-    const available = markets
-      .map((m) => `${m.symbol} (${m.marketName})`)
-      .join(', ');
-    throw new Error(
-      `Could not find a market matching "${query}". Available markets: ${available}`,
-    );
-  }
-
-  return (
-    results.find(
-      (r) =>
-        r.item.typeLabel === 'perp' &&
-        (r.score ?? 0) - (results[0].score ?? 0) < 0.05,
-    ) ?? results[0]
-  ).item;
 }
 
 export async function getTokenDecimals(

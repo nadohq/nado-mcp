@@ -6,7 +6,7 @@ import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
 import { getTokenDecimals } from '../../utils/resolveMarket.js';
-import { ProductIdSchema } from '../../utils/schemas.js';
+import { ProductIdSchema, SAFETY_DISCLAIMER } from '../../utils/schemas.js';
 
 export function registerWithdrawCollateral(
   server: McpServer,
@@ -20,7 +20,7 @@ export function registerWithdrawCollateral(
         'Withdraw collateral from a subaccount to the wallet. ' +
         'Use get_max_withdrawable to check the maximum amount that can be withdrawn without violating margin requirements. ' +
         'Use get_all_markets to find spot product IDs. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         productId: ProductIdSchema.describe(
           'Spot product ID to withdraw (e.g. 0 for USDT0)',

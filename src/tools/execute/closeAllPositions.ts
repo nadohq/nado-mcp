@@ -4,9 +4,16 @@ import { z } from 'zod';
 
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { DEFAULT_SLIPPAGE_PCT, buildOrder } from '../../utils/orderBuilder.js';
+import {
+  DEFAULT_SLIPPAGE_PCT,
+  buildCloseOrder,
+} from '../../utils/orderBuilder.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { type BalanceSide, ProductIdsSchema } from '../../utils/schemas.js';
+import {
+  type BalanceSide,
+  ProductIdsSchema,
+  SAFETY_DISCLAIMER,
+} from '../../utils/schemas.js';
 
 export function registerCloseAllPositions(
   server: McpServer,
@@ -21,7 +28,7 @@ export function registerCloseAllPositions(
         'Fetches all positions from the subaccount summary and places IOC orders to close each one. ' +
         'Skips positions with zero balance. Optionally filter by product IDs and/or side. ' +
         'Supports both cross-margin and isolated-margin positions. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         slippagePct: z
           .number()
@@ -99,19 +106,13 @@ export function registerCloseAllPositions(
 
       const crossOrders = await Promise.all(
         crossPositions.map(async (position) => {
-          const positionAmount = position.amount;
-          const isLong = positionAmount.isPositive();
-          const closeSide = isLong ? ('short' as const) : ('long' as const);
-          const absAmount = removeDecimals(positionAmount.abs()).toNumber();
+          const size = removeDecimals(position.amount).toNumber();
 
-          const orderParams = await buildOrder({
+          const orderParams = await buildCloseOrder({
             client: ctx.client,
             productId: position.productId,
-            side: closeSide,
-            amount: absAmount,
+            amount: -size,
             slippagePct,
-            orderExecutionType: 'ioc',
-            reduceOnly: true,
           });
 
           return {
@@ -127,26 +128,14 @@ export function registerCloseAllPositions(
 
       const isolatedOrders = await Promise.all(
         filteredIsolated.map(async (pos) => {
-          const positionAmount = pos.baseBalance.amount;
-          const isLong = positionAmount.isPositive();
-          const closeSide = isLong ? ('short' as const) : ('long' as const);
-          const absAmount = removeDecimals(positionAmount.abs()).toNumber();
+          const size = removeDecimals(pos.baseBalance.amount).toNumber();
 
-          const oraclePrice = Number(pos.baseBalance.oraclePrice);
-          const margin = removeDecimals(pos.quoteBalance.amount).toNumber();
-          const notional = absAmount * oraclePrice;
-          const leverage = margin > 0 ? Math.max(1, notional / margin) : 10;
-
-          const orderParams = await buildOrder({
+          const orderParams = await buildCloseOrder({
             client: ctx.client,
             productId: pos.baseBalance.productId,
-            side: closeSide,
-            amount: absAmount,
+            amount: -size,
             slippagePct,
-            orderExecutionType: 'ioc',
-            reduceOnly: true,
             marginMode: 'isolated',
-            leverage,
           });
 
           return {

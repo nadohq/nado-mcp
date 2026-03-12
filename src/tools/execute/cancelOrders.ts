@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { NadoContext } from '../../context.js';
 import { handleToolRequest } from '../../utils/handleToolRequest.js';
 import { requireSigner } from '../../utils/requireSigner.js';
-import { ProductIdsSchema } from '../../utils/schemas.js';
+import { ProductIdsSchema, SAFETY_DISCLAIMER } from '../../utils/schemas.js';
 
 export function registerCancelOrders(
   server: McpServer,
@@ -16,7 +16,7 @@ export function registerCancelOrders(
       title: 'Cancel Orders',
       description:
         'Cancel specific orders by their digests. Use get_open_orders to find order digests first. Each digest must be paired with its product ID at the same array index. ' +
-        'SAFETY: You MUST present an execution summary and receive explicit user confirmation BEFORE calling this tool. Never call in the same turn as the summary.',
+        SAFETY_DISCLAIMER,
       inputSchema: {
         productIds: ProductIdsSchema.describe(
           'Product IDs of the orders to cancel (must match digests by index)',

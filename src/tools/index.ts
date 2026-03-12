@@ -13,7 +13,6 @@ import { registerDepositCollateral } from './execute/depositCollateral.js';
 import { registerLinkSigner } from './execute/linkSigner.js';
 import { registerMintNlp } from './execute/mintNlp.js';
 import { registerPlaceOrder } from './execute/placeOrder.js';
-import { registerPlaceScaledOrders } from './execute/placeScaledOrders.js';
 import { registerPlaceTriggerOrder } from './execute/placeTriggerOrder.js';
 import { registerPlaceTwapOrder } from './execute/placeTwapOrder.js';
 import { registerTransferQuote } from './execute/transferQuote.js';
@@ -98,7 +97,6 @@ export function registerTools(server: McpServer, ctx: NadoContext): void {
   registerPlaceOrder(server, ctx);
   registerPlaceTwapOrder(server, ctx);
   registerPlaceTriggerOrder(server, ctx);
-  registerPlaceScaledOrders(server, ctx);
   registerCancelOrders(server, ctx);
   registerCancelProductOrders(server, ctx);
   registerCancelTriggerOrders(server, ctx);
