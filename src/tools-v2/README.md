@@ -13,10 +13,16 @@ The v1 tool surface has **49 tools** generating ~18K schema tokens of overhead p
 
 | Tool | Purpose |
 |------|---------|
-| `nado_discover` | Lists available SDK methods with parameter signatures |
+| `nado_discover` | **Dynamically** discovers SDK methods via runtime introspection + .d.ts parsing |
 | `nado_query` | Calls any SDK read method by name with params |
 
-**Pattern:** Progressive disclosure, inspired by [Cloudflare's Code Mode](https://blog.cloudflare.com/). The LLM calls `nado_discover` to learn what's available, then `nado_query` to execute specific reads.
+**Pattern:** Progressive disclosure, inspired by [Cloudflare's Code Mode](https://blog.cloudflare.com/code-mode-mcp/). The LLM calls `nado_discover` to learn what's available, then `nado_query` to execute specific reads.
+
+**Dynamic discovery** — the key improvement over v1:
+- SDK methods are enumerated at runtime via prototype walking
+- JSDoc descriptions and parameter types are extracted from `.d.ts` files
+- When the SDK adds a new read method, the MCP server discovers it **without any code changes**
+- No hardcoded catalog to maintain
 
 ### Write Tools (5-7 tools → replaces 17 write tools)
 
@@ -31,6 +37,79 @@ The v1 tool surface has **49 tools** generating ~18K schema tokens of overhead p
 | `nado_link_signer` | link_signer |
 
 **Why explicit schemas for writes:** Destructive operations need LLM guardrails — typed parameters, descriptions, and safety annotations.
+
+## How Dynamic Discovery Works
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    nado_discover                              │
+│                                                              │
+│  1. Runtime Introspection                                    │
+│     Walk NadoClient prototype chains:                        │
+│     client.market, client.subaccount, client.spot,           │
+│     client.perp, client.context.engineClient,                │
+│     client.context.indexerClient                             │
+│                                                              │
+│  2. .d.ts Parsing                                            │
+│     Read TypeScript declaration files from installed SDK:    │
+│     - Extract JSDoc comments (method descriptions)           │
+│     - Extract parameter type names                           │
+│     - Resolve type names to field definitions                │
+│                                                              │
+│  3. Filter & Cache                                           │
+│     - Exclude write methods (place*, cancel*, mint*, etc.)   │
+│     - Exclude internal methods (constructor, query, sign)    │
+│     - Cache catalog for process lifetime                     │
+│                                                              │
+│  Result: ~100 read methods with descriptions + param shapes  │
+└──────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────┐
+│                     nado_query                                │
+│                                                              │
+│  1. Validate method against discover catalog (security)      │
+│  2. Resolve "domain.method" → SDK object + function          │
+│  3. Apply subaccount defaults from context                   │
+│  4. Call the SDK method dynamically                          │
+│  5. Serialize result (handles BigNumber, BigInt)             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Domain Mapping
+
+| Domain | SDK Target | .d.ts Source |
+|--------|-----------|--------------|
+| `market` | `client.market` | MarketQueryAPI.d.ts |
+| `subaccount` | `client.subaccount` | SubaccountQueryAPI.d.ts |
+| `spot` | `client.spot` | SpotQueryAPI.d.ts |
+| `perp` | `client.perp` | PerpQueryAPI.d.ts |
+| `engine` | `client.context.engineClient` | EngineQueryClient.d.ts |
+| `indexer` | `client.context.indexerClient` | IndexerBaseClient.d.ts + IndexerClient.d.ts |
+
+### Type Resolution Pipeline
+
+```
+.d.ts file: getFundingRate(params: GetIndexerFundingRateParams): Promise<...>
+    │
+    ▼  Extract param type name: "GetIndexerFundingRateParams"
+    │
+    ▼  Find in type declaration files:
+       interface GetIndexerFundingRateParams { productId: number }
+    │
+    ▼  Resolve to readable shape: "{ productId: number }"
+```
+
+For types with inheritance:
+```
+type GetEngineSubaccountOrdersParams = Subaccount & { productId: number }
+    │
+    ▼  Resolve Subaccount: { subaccountOwner: string, subaccountName: string }
+    │
+    ▼  Merge: "{ subaccountOwner: string, subaccountName: string, productId: number }"
+```
 
 ## What Custom Logic Remains
 
@@ -52,8 +131,8 @@ Everything else (nonce generation, EIP712 signing, appendix packing, server payl
 ```
 src/tools-v2/
 ├── README.md                     # This file
-├── discover.ts                   # nado_discover — method catalog
-├── query.ts                      # nado_query — generic read dispatcher
+├── discover.ts                   # nado_discover — dynamic method catalog via introspection + .d.ts
+├── query.ts                      # nado_query — dynamic read dispatcher
 ├── execute-order.ts              # nado_place_order — order placement
 └── utils/
     └── symbolResolver.ts         # Human name → productId + trading params
@@ -67,8 +146,8 @@ src/tools-v2/
 User: "What's the ETH funding rate?"
 
 LLM:
-  1. nado_discover({ domain: "market" })
-     → sees: market.getFundingRate({ productId })
+  1. nado_discover({ domain: "market", search: "funding" })
+     → sees: market.getFundingRate — { productId: number }
   
   2. nado_query({ method: "engine.getSymbols", params: {} })
      → finds ETH-PERP = productId 4
@@ -103,7 +182,7 @@ Inside the tool, symbol resolution + price rounding + amount conversion happen a
 | Schema tokens | ~18,000 | ~3,000 |
 | Custom logic (lines) | ~330 | ~80 |
 | Tools count | 49 | 7-9 |
-| New SDK endpoint support | Add new tool file | Add row to catalog |
+| New SDK endpoint support | Add new tool file | **Automatic** (zero code changes) |
 
 ## Migration Notes
 
@@ -111,6 +190,7 @@ Inside the tool, symbol resolution + price rounding + amount conversion happen a
 - Both can be registered simultaneously for A/B testing
 - v2 uses the same `NadoContext` as v1
 - Symbol resolver caches engine symbols in-process (cleared on restart)
+- The discover catalog is built lazily on first call and cached for process lifetime
 
 ## SDK PR Opportunities
 

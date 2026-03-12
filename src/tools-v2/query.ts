@@ -1,353 +1,112 @@
 /**
- * nado_query — Generic SDK read tool
+ * nado_query — Dynamic SDK read dispatcher
  *
- * Calls any SDK read method by name with params. Replaces all 32+ individual
- * read tools with a single dynamic dispatcher.
+ * Calls any SDK read method by name with params. Replaces the static
+ * QUERY_HANDLERS map with dynamic method resolution.
  *
  * The LLM discovers available methods via nado_discover, then calls this tool
  * with the method path and parameters.
  *
- * Security: Only read methods are exposed. Write methods are handled by
- * dedicated thin-wrapper tools with explicit schemas.
+ * Security: Only methods present in the discover catalog (read-only) are callable.
+ * Write methods are handled by dedicated thin-wrapper tools with explicit schemas.
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoContext } from '../context.js';
+import { getDiscoveredMethods } from './discover.js';
+
+// ─── Domain Resolution ────────────────────────────────────────────
 
 /**
- * Registry mapping method paths → actual SDK call functions.
- *
- * This is the core of the progressive disclosure pattern. Each entry maps
- * a human-readable method path to a function that calls the SDK.
- *
- * We use explicit mapping rather than dynamic reflection because:
- * 1. TypeScript doesn't have runtime reflection
- * 2. We can control parameter translation (camelCase ↔ snake_case)
- * 3. We can add context-specific defaults (subaccount owner/name)
- * 4. We prevent accidental exposure of write methods
+ * Map of domain names to the SDK object that handles methods in that domain.
  */
-type QueryHandler = (
-  client: NadoClient,
-  ctx: NadoContext,
-  params: Record<string, unknown>,
-) => Promise<unknown>;
-
-function subaccountDefaults(
-  ctx: NadoContext,
-  params: Record<string, unknown>,
-): { subaccountOwner: string; subaccountName: string } {
-  return {
-    subaccountOwner:
-      (params.subaccountOwner as string) ?? ctx.subaccountOwner ?? '',
-    subaccountName:
-      (params.subaccountName as string) ?? ctx.subaccountName ?? 'default',
-  };
+function resolveTarget(client: NadoClient, domain: string): object | null {
+  switch (domain) {
+    case 'market':
+      return client.market;
+    case 'subaccount':
+      return client.subaccount;
+    case 'spot':
+      return client.spot;
+    case 'perp':
+      return client.perp;
+    case 'engine':
+      return client.context.engineClient;
+    case 'indexer':
+      return client.context.indexerClient;
+    default:
+      return null;
+  }
 }
 
-const QUERY_HANDLERS: Record<string, QueryHandler> = {
-  // ── Market ───────────────────────────────────────────────────────
-  'market.getAllMarkets': async (client) => client.market.getAllMarkets(),
+// ─── Subaccount Defaults ──────────────────────────────────────────
 
-  'market.getLatestMarketPrice': async (client, _ctx, params) =>
-    client.market.getLatestMarketPrice({
-      productId: params.productId as number,
-    }),
+/**
+ * Inject subaccount defaults from context into params when applicable.
+ *
+ * Handles two common patterns in the SDK:
+ *   1. Flat params: { subaccountOwner, subaccountName, ... }
+ *   2. Nested params: { subaccount: { subaccountOwner, subaccountName }, ... }
+ */
+function applySubaccountDefaults(
+  ctx: NadoContext,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = { ...params };
 
-  'market.getLatestMarketPrices': async (client, _ctx, params) =>
-    client.market.getLatestMarketPrices({
-      productIds: params.productIds as number[],
-    }),
+  // Pattern 1: flat subaccountOwner/subaccountName
+  if (
+    'subaccountOwner' in result ||
+    'subaccountName' in result ||
+    needsSubaccountFlat(result)
+  ) {
+    if (!result.subaccountOwner && ctx.subaccountOwner) {
+      result.subaccountOwner = ctx.subaccountOwner;
+    }
+    if (!result.subaccountName) {
+      result.subaccountName = ctx.subaccountName ?? 'default';
+    }
+  }
 
-  'market.getMarketLiquidity': async (client, _ctx, params) =>
-    client.market.getMarketLiquidity({
-      productId: params.productId as number,
-      depth: (params.depth as number) ?? 10,
-    }),
+  // Pattern 2: nested { subaccount: { ... } }
+  if ('subaccount' in result && typeof result.subaccount === 'object') {
+    const sub = result.subaccount as Record<string, unknown>;
+    if (!sub.subaccountOwner && ctx.subaccountOwner) {
+      sub.subaccountOwner = ctx.subaccountOwner;
+    }
+    if (!sub.subaccountName) {
+      sub.subaccountName = ctx.subaccountName ?? 'default';
+    }
+  }
 
-  'market.getCandlesticks': async (client, _ctx, params) =>
-    client.market.getCandlesticks({
-      productId: params.productId as number,
-      period: params.period as string,
-      maxTimeInclusive: params.maxTimeInclusive as number | undefined,
-      limit: params.limit as number | undefined,
-    }),
-
-  'market.getFundingRate': async (client, _ctx, params) =>
-    client.market.getFundingRate({
-      productId: params.productId as number,
-    }),
-
-  'market.getMultiProductFundingRates': async (client, _ctx, params) =>
-    client.market.getMultiProductFundingRates({
-      productIds: params.productIds as number[],
-    }),
-
-  'market.getMaxOrderSize': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.market.getMaxOrderSize({
-      productId: params.productId as number,
-      price: params.price as string,
-      side: params.side as 'long' | 'short',
+  // Pattern 3: subaccounts array — fill defaults for each
+  if (Array.isArray(result.subaccounts)) {
+    result.subaccounts = (
+      result.subaccounts as Array<Record<string, unknown>>
+    ).map((sub) => ({
+      subaccountOwner: sub.subaccountOwner ?? ctx.subaccountOwner ?? '',
+      subaccountName: sub.subaccountName ?? ctx.subaccountName ?? 'default',
       ...sub,
-      spotLeverage: params.spotLeverage as boolean | undefined,
-      reduceOnly: params.reduceOnly as boolean | undefined,
-      isolated: params.isolated as boolean | undefined,
-    });
-  },
+    }));
+  }
 
-  'market.getOpenSubaccountOrders': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.market.getOpenSubaccountOrders({
-      productId: params.productId as number,
-      ...sub,
-    });
-  },
+  return result;
+}
 
-  'market.getOpenSubaccountMultiProductOrders': async (
-    client,
-    ctx,
-    params,
-  ) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.market.getOpenSubaccountMultiProductOrders({
-      productIds: params.productIds as number[],
-      ...sub,
-    });
-  },
+/**
+ * Heuristic: does this call likely need subaccount fields?
+ * Used when the LLM passes an empty {} but the method needs subaccount info.
+ */
+function needsSubaccountFlat(_params: Record<string, unknown>): boolean {
+  // We can't know for sure without type info, but the discover tool
+  // tells the LLM which methods need subaccount. If params are empty
+  // and method requires subaccount, the SDK will throw a clear error.
+  return false;
+}
 
-  'market.getTriggerOrders': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.market.getTriggerOrders({
-      ...sub,
-      productIds: params.productIds as number[] | undefined,
-      statusTypes: params.statusTypes as string[] | undefined,
-      triggerTypes: params.triggerTypes as string[] | undefined,
-    });
-  },
-
-  'market.getHistoricalOrders': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.market.getHistoricalOrders({
-      subaccounts: params.subaccounts
-        ? (params.subaccounts as Array<{
-            subaccountOwner: string;
-            subaccountName: string;
-          }>)
-        : [sub],
-      productIds: params.productIds as number[] | undefined,
-      limit: params.limit as number | undefined,
-      maxTimestampInclusive: params.maxTimestampInclusive as
-        | number
-        | undefined,
-    });
-  },
-
-  'market.getProductSnapshots': async (client, _ctx, params) =>
-    client.market.getProductSnapshots({
-      productId: params.productId as number,
-      maxTimestampInclusive: params.maxTimestampInclusive as
-        | number
-        | undefined,
-      limit: params.limit as number | undefined,
-    }),
-
-  'market.getMarketSnapshots': async (client, _ctx, params) =>
-    client.market.getMarketSnapshots(
-      params as Parameters<typeof client.market.getMarketSnapshots>[0],
-    ),
-
-  // ── Subaccount ───────────────────────────────────────────────────
-  'subaccount.getSubaccountSummary': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.subaccount.getSubaccountSummary(sub);
-  },
-
-  'subaccount.getIsolatedPositions': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.subaccount.getIsolatedPositions(sub);
-  },
-
-  'subaccount.getEngineEstimatedSubaccountSummary': async (
-    client,
-    ctx,
-    params,
-  ) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.subaccount.getEngineEstimatedSubaccountSummary({
-      ...sub,
-      txs: params.txs as Array<{
-        type: 'apply_delta';
-        tx: {
-          productId: number;
-          amountDelta: string;
-          vQuoteDelta: string;
-        };
-      }>,
-      preState: params.preState as boolean | undefined,
-    });
-  },
-
-  'subaccount.getSubaccountFeeRates': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.subaccount.getSubaccountFeeRates(sub);
-  },
-
-  // ── Spot ─────────────────────────────────────────────────────────
-  'spot.getMaxWithdrawable': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.spot.getMaxWithdrawable({
-      productId: params.productId as number,
-      ...sub,
-      spotLeverage: params.spotLeverage as boolean | undefined,
-    });
-  },
-
-  'spot.getMaxMintNlpAmount': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.spot.getMaxMintNlpAmount({
-      ...sub,
-      spotLeverage: params.spotLeverage as boolean | undefined,
-    });
-  },
-
-  // ── Perp ─────────────────────────────────────────────────────────
-  'perp.getPerpPrices': async (client, _ctx, params) =>
-    client.perp.getPerpPrices({ productId: params.productId as number }),
-
-  'perp.getMultiProductPerpPrices': async (client, _ctx, params) =>
-    client.perp.getMultiProductPerpPrices({
-      productIds: params.productIds as number[],
-    }),
-
-  // ── Engine (direct) ──────────────────────────────────────────────
-  'engine.getSymbols': async (client, _ctx, params) =>
-    client.context.engineClient.getSymbols({
-      productType: params.productType as string | undefined,
-      productIds: params.productIds as number[] | undefined,
-    }),
-
-  'engine.getStatus': async (client) =>
-    client.context.engineClient.getStatus(),
-
-  'engine.getContracts': async (client) =>
-    client.context.engineClient.getContracts(),
-
-  'engine.getHealthGroups': async (client) =>
-    client.context.engineClient.getHealthGroups(),
-
-  'engine.getOrder': async (client, _ctx, params) =>
-    client.context.engineClient.getOrder({
-      productId: params.productId as number,
-      digest: params.digest as string,
-    }),
-
-  'engine.getLinkedSigner': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.context.engineClient.getLinkedSigner(sub);
-  },
-
-  'engine.getInsurance': async (client) =>
-    client.context.engineClient.getInsurance(),
-
-  'engine.getNlpLockedBalances': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.context.engineClient.getNlpLockedBalances(sub);
-  },
-
-  'engine.getNlpPoolInfo': async (client) =>
-    client.context.engineClient.getNlpPoolInfo(),
-
-  'engine.getMaxBurnNlpAmount': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.context.engineClient.getMaxBurnNlpAmount(sub);
-  },
-
-  // ── Indexer (direct) ─────────────────────────────────────────────
-  'indexer.listSubaccounts': async (client, _ctx, params) =>
-    client.context.indexerClient.listSubaccounts({
-      address: params.address as string,
-    }),
-
-  'indexer.getOraclePrices': async (client, _ctx, params) =>
-    client.context.indexerClient.getOraclePrices({
-      productIds: params.productIds as number[],
-    }),
-
-  'indexer.getMatchEvents': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.context.indexerClient.getMatchEvents({
-      subaccounts: params.subaccounts
-        ? (params.subaccounts as Array<{
-            subaccountOwner: string;
-            subaccountName: string;
-          }>)
-        : [sub],
-      productIds: params.productIds as number[] | undefined,
-      limit: params.limit as number | undefined,
-      maxTimestampInclusive: params.maxTimestampInclusive as
-        | number
-        | undefined,
-    });
-  },
-
-  'indexer.getInterestFundingPayments': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.context.indexerClient.getInterestFundingPayments({
-      subaccount: sub,
-      productIds: params.productIds as number[] | undefined,
-      limit: params.limit as number | undefined,
-      maxTimestampInclusive: params.maxTimestampInclusive as
-        | number
-        | undefined,
-    });
-  },
-
-  'indexer.getMultiSubaccountSnapshots': async (client, ctx, params) => {
-    const sub = subaccountDefaults(ctx, params);
-    return client.context.indexerClient.getMultiSubaccountSnapshots({
-      subaccounts: params.subaccounts
-        ? (params.subaccounts as Array<{
-            subaccountOwner: string;
-            subaccountName: string;
-          }>)
-        : [sub],
-      timestamps: params.timestamps as number[],
-    });
-  },
-
-  'indexer.getLeaderboard': async (client, _ctx, params) =>
-    client.context.indexerClient.getLeaderboard({
-      contestId: params.contestId as number,
-      rankType: params.rankType as 'pnl' | 'roi',
-      limit: params.limit as number | undefined,
-      startCursor: params.startCursor as number | undefined,
-    }),
-
-  'indexer.getQuotePrice': async (client) =>
-    client.context.indexerClient.getQuotePrice(),
-
-  'indexer.getV2Tickers': async (client, _ctx, params) =>
-    client.context.indexerClient.getV2Tickers({
-      market: params.market as string | undefined,
-    }),
-
-  'indexer.getSequencerBacklog': async (client) =>
-    client.context.indexerClient.getSequencerBacklog(),
-
-  'indexer.getNlpSnapshots': async (client, _ctx, params) =>
-    client.context.indexerClient.getNlpSnapshots({
-      limit: (params.limit as number) ?? 100,
-      maxTimeInclusive: params.maxTimeInclusive as number | undefined,
-      granularity: (params.granularity as number) ?? 86400,
-    }),
-
-  'indexer.getPoints': async (client, _ctx, params) =>
-    client.context.indexerClient.getPoints({
-      address: params.address as string,
-    }),
-};
+// ─── Custom JSON Serialization ────────────────────────────────────
 
 /**
  * Custom replacer for JSON.stringify that handles BigInt and BigNumber.
@@ -357,11 +116,19 @@ function jsonReplacer(_key: string, value: unknown): unknown {
     return value.toString();
   }
   // BigNumber instances from bignumber.js
-  if (value && typeof value === 'object' && 's' in value && 'e' in value && 'c' in value) {
+  if (
+    value &&
+    typeof value === 'object' &&
+    's' in value &&
+    'e' in value &&
+    'c' in value
+  ) {
     return (value as { toString(): string }).toString();
   }
   return value;
 }
+
+// ─── Tool Registration ────────────────────────────────────────────
 
 export function registerQueryTool(server: McpServer, ctx: NadoContext): void {
   server.registerTool(
@@ -379,7 +146,7 @@ export function registerQueryTool(server: McpServer, ctx: NadoContext): void {
             'SDK method path, e.g. "market.getLatestMarketPrice", "engine.getSymbols"',
           ),
         params: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .default({})
           .describe('Method parameters as a JSON object'),
       },
@@ -392,16 +159,64 @@ export function registerQueryTool(server: McpServer, ctx: NadoContext): void {
       method: string;
       params: Record<string, unknown>;
     }) => {
-      const handler = QUERY_HANDLERS[method];
-      if (!handler) {
-        const available = Object.keys(QUERY_HANDLERS).sort().join('\n  ');
+      // Parse method path: "domain.methodName"
+      const dotIndex = method.indexOf('.');
+      if (dotIndex === -1) {
         throw new Error(
-          `Unknown method "${method}". Available methods:\n  ${available}`,
+          `Invalid method path "${method}". Expected format: "domain.methodName" (e.g. "market.getFundingRate")`,
         );
       }
 
+      const domain = method.slice(0, dotIndex);
+      const methodName = method.slice(dotIndex + 1);
+
+      // Security: validate method is in the discovered read-only catalog
+      const discoveredMethods = getDiscoveredMethods(ctx.client);
+      if (!discoveredMethods.has(method)) {
+        // Generate helpful error with suggestions
+        const suggestions = [...discoveredMethods]
+          .filter(
+            (m) =>
+              m.startsWith(`${domain}.`) ||
+              m.toLowerCase().includes(methodName.toLowerCase()),
+          )
+          .slice(0, 10);
+
+        throw new Error(
+          `Unknown or disallowed method "${method}". ` +
+            (suggestions.length > 0
+              ? `Did you mean one of:\n  ${suggestions.join('\n  ')}`
+              : `Use nado_discover to see available methods.`),
+        );
+      }
+
+      // Resolve the target object for this domain
+      const target = resolveTarget(ctx.client, domain);
+      if (!target) {
+        throw new Error(
+          `Unknown domain "${domain}". Available: market, subaccount, spot, perp, engine, indexer`,
+        );
+      }
+
+      // Get the method function
+      const fn = (target as Record<string, unknown>)[methodName];
+      if (typeof fn !== 'function') {
+        throw new Error(
+          `Method "${methodName}" not found on ${domain} client. Use nado_discover to see available methods.`,
+        );
+      }
+
+      // Apply subaccount defaults
+      const resolvedParams = applySubaccountDefaults(ctx, params);
+
       try {
-        const result = await handler(ctx.client, ctx, params);
+        // Call the method — bind to the target to preserve `this`.
+        // Always pass the params object (even if empty) because SDK methods
+        // with optional params expect an object, not undefined. For zero-arg
+        // methods, the extra argument is harmlessly ignored by JavaScript.
+
+        const result: unknown = await fn.call(target, resolvedParams);
+
         return {
           content: [
             {
