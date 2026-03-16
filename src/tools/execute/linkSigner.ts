@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { isAddress } from 'viem';
+import { Address, isAddress } from 'viem';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -36,7 +36,7 @@ export function registerLinkSigner(server: McpServer, ctx: NadoContext): void {
           ctx.client.subaccount.linkSigner({
             subaccountOwner: ctx.subaccountOwner,
             subaccountName: ctx.subaccountName,
-            signer: signer as `0x${string}`,
+            signer: signer as Address,
           }),
       );
     },
