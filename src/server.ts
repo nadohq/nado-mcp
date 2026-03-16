@@ -1,10 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import { loadConfig } from './config.js';
-import { createNadoContext } from './context.js';
-import { SERVER_INSTRUCTIONS } from './instructions.js';
-import { registerResources } from './resources/index.js';
-import { registerTools } from './tools/index.js';
+import { loadConfig } from './config';
+import { createNadoContext } from './context';
+import { SERVER_INSTRUCTIONS } from './instructions';
+import { registerResources } from './resources/index';
+import { registerTools } from './tools/index';
 
 /**
  * Creates and configures the MCP server with all Nado tools and resources.

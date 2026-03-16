@@ -1,19 +1,20 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
+import { TimeInSeconds, removeDecimals, toBigDecimal } from '@nadohq/client';
 import type { IndexerMatchEvent } from '@nadohq/indexer-client';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { getMarkets } from '../../utils/resolveMarket.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { getMarkets } from '../../utils/resolveMarket';
 import {
   SubaccountNameSchema,
   SubaccountOwnerSchema,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 const PAGE_SIZE = 500;
 const MAX_PAGES = 40;
-const SECONDS_PER_DAY = 86_400;
+const DELAY_MS = 100;
 
 interface MarketStats {
   symbol: string;
@@ -47,6 +48,10 @@ async function fetchAllEvents(
   let cursor: string | undefined;
 
   for (let page = 0; page < MAX_PAGES; page++) {
+    if (page > 0) {
+      await new Promise((r) => setTimeout(r, DELAY_MS));
+    }
+
     const response =
       await client.context.indexerClient.getPaginatedSubaccountMatchEvents({
         subaccountOwner,
@@ -70,64 +75,13 @@ async function fetchAllEvents(
   return allEvents.filter((e) => Number(e.timestamp) >= minTimestamp);
 }
 
-function sumSnapshotVolume(snapshot: {
-  balances: Array<{
-    trackedVars: { quoteVolumeCumulative: { toString(): string } };
-  }>;
-}): number {
-  let total = 0;
-  for (const balance of snapshot.balances) {
-    total +=
-      Math.abs(Number(balance.trackedVars.quoteVolumeCumulative.toString())) /
-      1e18;
-  }
-  return total;
-}
-
-async function fetchSnapshotVolume(
-  client: NadoClient,
-  subaccountOwner: string,
-  subaccountName: string,
-  days: number,
-): Promise<number> {
-  const now = Math.floor(Date.now() / 1000);
-  const historicalTs = now - days * SECONDS_PER_DAY;
-
-  const response =
-    await client.context.indexerClient.getMultiSubaccountSnapshots({
-      subaccounts: [{ subaccountOwner, subaccountName }],
-      timestamps: [now, historicalTs],
-    });
-
-  const hexIds = response.subaccountHexIds;
-  if (!hexIds?.length) return 0;
-
-  const snapshots = response.snapshots[hexIds[0]];
-  if (!snapshots) return 0;
-
-  const tsKeys = Object.keys(snapshots).sort((a, b) => Number(b) - Number(a));
-
-  const currentSnapshot = snapshots[tsKeys[0]];
-  const historicalSnapshot = tsKeys.length > 1 ? snapshots[tsKeys[1]] : null;
-
-  const currentVolume = currentSnapshot
-    ? sumSnapshotVolume(currentSnapshot)
-    : 0;
-  const historicalVolume = historicalSnapshot
-    ? sumSnapshotVolume(historicalSnapshot)
-    : 0;
-
-  return currentVolume - historicalVolume;
-}
-
 function computeStats(
   events: IndexerMatchEvent[],
   days: number,
   symbolMap: Map<number, string>,
-  snapshotVolume?: number,
 ): AccountStats {
   const now = Math.floor(Date.now() / 1000);
-  const cutoff = now - days * SECONDS_PER_DAY;
+  const cutoff = now - days * TimeInSeconds.DAY;
 
   const marketAgg = new Map<
     number,
@@ -151,9 +105,12 @@ function computeStats(
     const ts = Number(event.timestamp);
     if (ts < cutoff) continue;
 
-    const quote = Math.abs(Number(event.quoteFilled)) / 1e18;
-    const fee = Number(event.totalFee) / 1e18;
-    const pnl = Number(event.realizedPnl ?? 0) / 1e18;
+    const quoteFilled = removeDecimals(
+      toBigDecimal(event.quoteFilled).abs(),
+    ).toNumber();
+    const fee = removeDecimals(toBigDecimal(event.totalFee)).toNumber();
+    const quote = quoteFilled - Math.abs(fee);
+    const pnl = removeDecimals(toBigDecimal(event.realizedPnl ?? 0)).toNumber();
     const isTaker = event.isTaker ?? true;
     const pid = event.productId;
 
@@ -185,8 +142,6 @@ function computeStats(
     dayAgg.set(date, d);
   }
 
-  const reportedVolume = snapshotVolume != null ? snapshotVolume : totalVolume;
-
   const byMarket: MarketStats[] = [...marketAgg.entries()]
     .sort((a, b) => b[1].volume - a[1].volume)
     .map(([pid, m]) => ({
@@ -214,14 +169,14 @@ function computeStats(
       to: new Date(now * 1000).toISOString().slice(0, 10),
     },
     volume: {
-      total: round(reportedVolume),
+      total: round(totalVolume),
       maker: round(makerVolume),
       taker: round(takerVolume),
     },
     trades: { total: totalTrades, maker: makerTrades, taker: takerTrades },
     fees: round(totalFees),
     realizedPnl: round(totalPnl),
-    averageTradeSize: totalTrades > 0 ? round(reportedVolume / totalTrades) : 0,
+    averageTradeSize: totalTrades > 0 ? round(totalVolume / totalTrades) : 0,
     marketsTraded: marketAgg.size,
     byMarket,
     byDay,
@@ -276,9 +231,9 @@ export function registerGetAccountStats(
         `Failed to fetch account stats for ${subaccountOwner}/${subaccountName}.`,
         async () => {
           const minTimestamp =
-            Math.floor(Date.now() / 1000) - days * SECONDS_PER_DAY;
+            Math.floor(Date.now() / 1000) - days * TimeInSeconds.DAY;
 
-          const [events, markets, snapshotVolume] = await Promise.all([
+          const [events, markets] = await Promise.all([
             fetchAllEvents(
               ctx.client,
               subaccountOwner,
@@ -287,19 +242,13 @@ export function registerGetAccountStats(
               productIds,
             ),
             getMarkets(ctx.dataEnv, ctx.chainEnv).catch(() => []),
-            fetchSnapshotVolume(
-              ctx.client,
-              subaccountOwner,
-              subaccountName,
-              days,
-            ).catch(() => undefined),
           ]);
 
           const symbolMap = new Map(
             markets.map((m) => [m.productId, m.symbol]),
           );
 
-          return computeStats(events, days, symbolMap, snapshotVolume);
+          return computeStats(events, days, symbolMap);
         },
       ),
   );

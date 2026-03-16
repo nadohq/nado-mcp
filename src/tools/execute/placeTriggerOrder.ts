@@ -1,13 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   buildPriceTriggerOrder,
-} from '../../utils/orderBuilder.js';
-import { requireSigner } from '../../utils/requireSigner.js';
+} from '../../utils/orderBuilder';
+import { requireSigner } from '../../utils/requireSigner';
 import {
   type BalanceSide,
   BalanceSideSchema,
@@ -15,8 +15,9 @@ import {
   MarginModeSchema,
   ProductIdSchema,
   SAFETY_DISCLAIMER,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
+// TODO: Export PRICE_TRIGGER_TYPES array from @nadohq/client and derive this schema from it
 const TriggerTypeSchema = z
   .enum([
     'oracle_price_above',

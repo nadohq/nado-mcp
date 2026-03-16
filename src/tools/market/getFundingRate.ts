@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { ProductIdSchema } from '../../utils/schemas.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { ProductIdSchema } from '../../utils/schemas';
 
 export function registerGetFundingRate(
   server: McpServer,

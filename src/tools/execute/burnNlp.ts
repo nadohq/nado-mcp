@@ -2,10 +2,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { requireSigner } from '../../utils/requireSigner.js';
-import { SAFETY_DISCLAIMER } from '../../utils/schemas.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { requireSigner } from '../../utils/requireSigner';
+import { SAFETY_DISCLAIMER } from '../../utils/schemas';
 
 export function registerBurnNlp(server: McpServer, ctx: NadoContext): void {
   server.registerTool(

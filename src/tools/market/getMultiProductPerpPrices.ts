@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { fmtProductIds } from '../../utils/formatting.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { ProductIdsSchema } from '../../utils/schemas.js';
+import { fmtProductIds } from '../../utils/formatting';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { ProductIdsSchema } from '../../utils/schemas';
 
 export function registerGetMultiProductPerpPrices(
   server: McpServer,

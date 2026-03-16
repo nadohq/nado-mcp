@@ -1,21 +1,20 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   buildEngineOrder,
-  toExecutionType,
-} from '../../utils/orderBuilder.js';
-import { requireSigner } from '../../utils/requireSigner.js';
+} from '../../utils/orderBuilder';
+import { requireSigner } from '../../utils/requireSigner';
 import {
   BalanceSideSchema,
   MarginModeSchema,
   ProductIdSchema,
   SAFETY_DISCLAIMER,
   TimeInForceSchema,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 const OrderSchema = z.object({
   productId: ProductIdSchema,
@@ -70,33 +69,26 @@ export function registerPlaceOrder(server: McpServer, ctx: NadoContext): void {
       title: 'Place Order(s)',
       description:
         'Place one or more orders on Nado. Supports market and limit orders, cross and isolated margin. ' +
-        'Pass a single order object, or an array to batch multiple orders atomically (e.g. scaled/grid orders). ' +
+        'Pass an array of orders (single or multiple) to batch atomically (e.g. scaled/grid orders). ' +
         'Omit price for a market order (will use IOC with slippage). ' +
         SAFETY_DISCLAIMER,
       inputSchema: {
-        orders: z.union([OrderSchema, z.array(OrderSchema).min(1).max(50)]),
+        orders: z.array(OrderSchema).min(1).max(50),
       },
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
-    async ({ orders: input }: { orders: Order | Order[] }) => {
+    async ({ orders }: { orders: Order[] }) => {
       requireSigner('place_order', ctx);
 
-      const orderList = Array.isArray(input) ? input : [input];
-
       const built = await Promise.all(
-        orderList.map(async (o) => {
-          const isMarketOrder = o.price == null;
-          const executionType = isMarketOrder
-            ? 'ioc'
-            : toExecutionType(o.timeInForce);
-
+        orders.map(async (o) => {
           const orderParams = await buildEngineOrder({
             client: ctx.client,
             productId: o.productId,
             amount: o.side === 'short' ? -o.amount : o.amount,
             price: o.price,
             slippagePct: o.slippagePct,
-            orderExecutionType: executionType,
+            orderExecutionType: o.price == null ? 'ioc' : o.timeInForce,
             reduceOnly: o.reduceOnly,
             marginMode: o.marginMode,
             leverage: o.leverage,

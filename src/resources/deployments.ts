@@ -6,7 +6,7 @@ import {
   type ChainEnv,
 } from '@nadohq/client';
 
-import { toJsonContent } from '../utils/formatting.js';
+import { toJsonContent } from '../utils/formatting';
 
 export function registerDeploymentsResource(server: McpServer): void {
   const template = new ResourceTemplate('nado://deployments/{chainEnv}', {

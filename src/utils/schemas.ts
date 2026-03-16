@@ -55,10 +55,10 @@ export const MarginModeSchema = z
 export type MarginMode = z.infer<typeof MarginModeSchema>;
 
 export const TimeInForceSchema = z
-  .enum(['gtc', 'ioc', 'fok', 'post_only'])
-  .default('gtc')
+  .enum(['default', 'ioc', 'fok', 'post_only'])
+  .default('default')
   .describe(
-    'Time in force: gtc (good-til-cancel, default), ioc (immediate-or-cancel), fok (fill-or-kill), post_only',
+    'Time in force: default (good-til-cancel, default), ioc (immediate-or-cancel), fok (fill-or-kill), post_only',
   );
 
 export type TimeInForce = z.infer<typeof TimeInForceSchema>;

@@ -1,14 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   buildEngineOrder,
-  toExecutionType,
-} from '../../utils/orderBuilder.js';
-import { requireSigner } from '../../utils/requireSigner.js';
+} from '../../utils/orderBuilder';
+import { requireSigner } from '../../utils/requireSigner';
 import {
   type BalanceSide,
   BalanceSideSchema,
@@ -19,7 +18,7 @@ import {
   SAFETY_DISCLAIMER,
   type TimeInForce,
   TimeInForceSchema,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 export function registerCancelAndPlace(
   server: McpServer,
@@ -104,18 +103,13 @@ export function registerCancelAndPlace(
     }) => {
       requireSigner('cancel_and_place', ctx);
 
-      const isMarketOrder = price == null;
-      const executionType = isMarketOrder
-        ? 'ioc'
-        : toExecutionType(timeInForce);
-
       const orderParams = await buildEngineOrder({
         client: ctx.client,
         productId,
         amount: side === 'short' ? -amount : amount,
         price,
         slippagePct,
-        orderExecutionType: executionType,
+        orderExecutionType: price == null ? 'ioc' : timeInForce,
         reduceOnly,
         marginMode,
         leverage,

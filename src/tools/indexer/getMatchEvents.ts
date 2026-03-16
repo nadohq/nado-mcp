@@ -3,12 +3,12 @@ import type { NadoClient } from '@nadohq/client';
 import type { IndexerMatchEvent } from '@nadohq/indexer-client';
 import { z } from 'zod';
 
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   ProductIdsSchema,
   SubaccountNameSchema,
   SubaccountOwnerSchema,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 const PAGE_SIZE = 500;
 const MAX_PAGES = 20;

@@ -1,21 +1,27 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { addDecimals, packOrderAppendix, toBigDecimal } from '@nadohq/client';
+import {
+  BigDecimals,
+  addDecimals,
+  packOrderAppendix,
+  removeDecimals,
+  toBigDecimal,
+} from '@nadohq/client';
 import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   calculateTwapExpiration,
-} from '../../utils/orderBuilder.js';
-import { requireSigner } from '../../utils/requireSigner.js';
+} from '../../utils/orderBuilder';
+import { requireSigner } from '../../utils/requireSigner';
 import {
   type BalanceSide,
   BalanceSideSchema,
   ProductIdSchema,
   SAFETY_DISCLAIMER,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 function roundToIncrement(value: BigNumber, increment: BigNumber): BigNumber {
   if (increment.isZero()) return value;
@@ -101,18 +107,19 @@ export function registerPlaceTwapOrder(
 
       const allMarkets = await ctx.client.market.getAllMarkets();
       const market = allMarkets.find((m) => m.productId === productId);
-      const sizeIncrement = market ? market.sizeIncrement : new BigNumber(1);
-      const priceIncrement = market ? market.priceIncrement : new BigNumber(1);
-
-      const marketPrice = await ctx.client.market.getLatestMarketPrice({
-        productId,
-      });
-      const isLong = side === 'long';
-      const refPrice = isLong ? marketPrice.ask : marketPrice.bid;
-      if (refPrice.lte(0)) {
+      if (!market) {
         throw new Error(
-          `No ${isLong ? 'ask' : 'bid'} price available for product ${productId}.`,
+          `Unknown product ${productId}. Use get_all_markets to find valid product IDs.`,
         );
+      }
+      const { sizeIncrement } = market;
+
+      const isLong = side === 'long';
+
+      const perpPrices = await ctx.client.perp.getPerpPrices({ productId });
+      const refPrice = perpPrices.indexPrice;
+      if (refPrice.lte(0)) {
+        throw new Error(`No oracle price available for product ${productId}.`);
       }
 
       const perOrderAmount = roundToIncrement(
@@ -123,9 +130,7 @@ export function registerPlaceTwapOrder(
       const perOrderSigned = isLong ? perOrderAmount : perOrderAmount.negated();
       const totalAmountX18 = perOrderSigned.times(numOrders);
 
-      const orderPrice = isLong
-        ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed()
-        : '0';
+      const orderPrice = isLong ? BigDecimals.MAX_I128.toFixed() : '0';
 
       const expiration = calculateTwapExpiration(numOrders, intervalSeconds);
 
@@ -173,9 +178,7 @@ export function registerPlaceTwapOrder(
               side,
               productId,
               totalAmount: amount,
-              perOrderAmount: perOrderAmount
-                .dividedBy(toBigDecimal(10).pow(18))
-                .toFixed(),
+              perOrderAmount: removeDecimals(perOrderAmount).toFixed(),
               numOrders,
               intervalSeconds,
               totalDuration: `${durationMinutes} minutes`,

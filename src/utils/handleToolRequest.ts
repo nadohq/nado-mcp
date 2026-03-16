@@ -1,5 +1,5 @@
-import { ToolExecutionError } from './errors.js';
-import { toJsonContent } from './formatting.js';
+import { ToolExecutionError } from './errors';
+import { toJsonContent } from './formatting';
 
 /**
  * Wraps an async tool handler: serializes the result to JSON on success,

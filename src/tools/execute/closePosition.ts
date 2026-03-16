@@ -2,14 +2,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ProductEngineType, removeDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   buildCloseOrder,
-} from '../../utils/orderBuilder.js';
-import { requireSigner } from '../../utils/requireSigner.js';
-import { ProductIdSchema, SAFETY_DISCLAIMER } from '../../utils/schemas.js';
+} from '../../utils/orderBuilder';
+import { requireSigner } from '../../utils/requireSigner';
+import { ProductIdSchema, SAFETY_DISCLAIMER } from '../../utils/schemas';
 
 export function registerClosePosition(
   server: McpServer,

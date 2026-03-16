@@ -3,14 +3,14 @@ import type { NadoClient } from '@nadohq/client';
 import { toBigDecimal } from '@nadohq/client';
 import { z } from 'zod';
 
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   type BalanceSide,
   BalanceSideSchema,
   ProductIdSchema,
   SubaccountNameSchema,
   SubaccountOwnerSchema,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 export function registerGetMaxOrderSize(
   server: McpServer,

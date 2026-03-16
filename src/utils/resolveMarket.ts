@@ -1,6 +1,6 @@
 import { type ChainEnv, ProductEngineType } from '@nadohq/client';
 
-import { type DataEnv, getMetadataUrl } from '../dataEnv.js';
+import { type DataEnv, getMetadataUrl } from '../dataEnv';
 
 interface ApiPerpMetadata {
   marketName: string;

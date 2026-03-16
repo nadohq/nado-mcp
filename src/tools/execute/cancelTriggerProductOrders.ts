@@ -1,10 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import type { NadoContext } from '../../context.js';
-import { fmtProductIds } from '../../utils/formatting.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { requireSigner } from '../../utils/requireSigner.js';
-import { ProductIdsSchema, SAFETY_DISCLAIMER } from '../../utils/schemas.js';
+import type { NadoContext } from '../../context';
+import { fmtProductIds } from '../../utils/formatting';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { requireSigner } from '../../utils/requireSigner';
+import { ProductIdsSchema, SAFETY_DISCLAIMER } from '../../utils/schemas';
 
 export function registerCancelTriggerProductOrders(
   server: McpServer,

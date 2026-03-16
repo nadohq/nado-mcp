@@ -11,17 +11,6 @@ import {
 } from '@nadohq/client';
 import BigNumber from 'bignumber.js';
 
-const TIF_TO_EXECUTION_TYPE: Record<string, OrderExecutionType> = {
-  gtc: 'default',
-  ioc: 'ioc',
-  fok: 'fok',
-  post_only: 'post_only',
-};
-
-export function toExecutionType(tif: string): OrderExecutionType {
-  return TIF_TO_EXECUTION_TYPE[tif] ?? 'default';
-}
-
 export const DEFAULT_SLIPPAGE_PCT = 2;
 
 function roundToIncrement(value: BigNumber, increment: BigNumber): BigNumber {
@@ -47,15 +36,15 @@ export interface BuiltOrderParams {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-interface MarketData {
+interface MarketIncrements {
   priceIncrement: BigNumber;
   sizeIncrement: BigNumber;
 }
 
-async function resolveMarketData(
+async function resolveMarketIncrements(
   client: NadoClient,
   productId: number,
-): Promise<MarketData> {
+): Promise<MarketIncrements> {
   const allMarkets = await client.market.getAllMarkets();
   const market = allMarkets.find((m) => m.productId === productId);
   if (!market) {
@@ -87,14 +76,23 @@ function resolveAmount(
   return { absAmountX18, signedAmountX18 };
 }
 
-async function resolvePrice(
-  client: NadoClient,
-  productId: number,
-  isLong: boolean,
-  slippagePct: number,
-  priceIncrement: BigNumber,
-  price?: number,
-): Promise<string> {
+interface ResolvePriceInput {
+  client: NadoClient;
+  productId: number;
+  isLong: boolean;
+  slippagePct: number;
+  priceIncrement: BigNumber;
+  price?: number;
+}
+
+async function resolvePrice({
+  client,
+  productId,
+  isLong,
+  slippagePct,
+  priceIncrement,
+  price,
+}: ResolvePriceInput): Promise<string> {
   if (price != null) {
     return roundToIncrement(new BigNumber(price), priceIncrement).toFixed();
   }
@@ -127,21 +125,12 @@ async function resolvePrice(
   ).toFixed();
 }
 
-function resolveIsolatedMargin(
-  marginMode: 'cross' | 'isolated' | undefined,
-  reduceOnly: boolean,
-  leverage: number | undefined,
+function computeIsolatedMargin(
   amount: number,
   resolvedPrice: string,
-): { margin: BigDecimalish } | undefined {
-  if (marginMode !== 'isolated') return undefined;
-  if (reduceOnly) return { margin: 0 };
-  if (leverage == null) {
-    throw new Error('leverage is required when marginMode is "isolated".');
-  }
-  return {
-    margin: addDecimals(Math.abs((amount * Number(resolvedPrice)) / leverage)),
-  };
+  leverage: number,
+): BigDecimalish {
+  return addDecimals(Math.abs((amount * Number(resolvedPrice)) / leverage));
 }
 
 // ---------------------------------------------------------------------------
@@ -182,26 +171,33 @@ export async function buildEngineOrder(
   } = input;
 
   const isLong = amount > 0;
-  const { priceIncrement, sizeIncrement } = await resolveMarketData(
+  const { priceIncrement, sizeIncrement } = await resolveMarketIncrements(
     client,
     productId,
   );
   const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
-  const resolvedPrice = await resolvePrice(
+  const resolvedPrice = await resolvePrice({
     client,
     productId,
     isLong,
     slippagePct,
     priceIncrement,
     price,
-  );
-  const isolated = resolveIsolatedMargin(
-    marginMode,
-    reduceOnly,
-    leverage,
-    amount,
-    resolvedPrice,
-  );
+  });
+
+  let isolated: { margin: BigDecimalish } | undefined;
+  if (marginMode === 'isolated') {
+    if (reduceOnly) {
+      isolated = { margin: 0 };
+    } else {
+      if (leverage == null) {
+        throw new Error('leverage is required when marginMode is "isolated".');
+      }
+      isolated = {
+        margin: computeIsolatedMargin(amount, resolvedPrice, leverage),
+      };
+    }
+  }
 
   const appendix = packOrderAppendix({
     orderExecutionType,
@@ -247,18 +243,18 @@ export async function buildCloseOrder(
   } = input;
 
   const isLong = amount > 0;
-  const { priceIncrement, sizeIncrement } = await resolveMarketData(
+  const { priceIncrement, sizeIncrement } = await resolveMarketIncrements(
     client,
     productId,
   );
   const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
-  const resolvedPrice = await resolvePrice(
+  const resolvedPrice = await resolvePrice({
     client,
     productId,
     isLong,
     slippagePct,
     priceIncrement,
-  );
+  });
   const isolated = marginMode === 'isolated' ? { margin: 0 } : undefined;
 
   const appendix = packOrderAppendix({
@@ -313,26 +309,33 @@ export async function buildPriceTriggerOrder(
   } = input;
 
   const isLong = amount > 0;
-  const { priceIncrement, sizeIncrement } = await resolveMarketData(
+  const { priceIncrement, sizeIncrement } = await resolveMarketIncrements(
     client,
     productId,
   );
   const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
-  const resolvedPrice = await resolvePrice(
+  const resolvedPrice = await resolvePrice({
     client,
     productId,
     isLong,
     slippagePct,
     priceIncrement,
     price,
-  );
-  const isolated = resolveIsolatedMargin(
-    marginMode,
-    reduceOnly,
-    leverage,
-    amount,
-    resolvedPrice,
-  );
+  });
+
+  let isolated: { margin: BigDecimalish } | undefined;
+  if (marginMode === 'isolated') {
+    if (reduceOnly) {
+      isolated = { margin: 0 };
+    } else {
+      if (leverage == null) {
+        throw new Error('leverage is required when marginMode is "isolated".');
+      }
+      isolated = {
+        margin: computeIsolatedMargin(amount, resolvedPrice, leverage),
+      };
+    }
+  }
 
   const executionType = price == null ? 'ioc' : 'default';
 

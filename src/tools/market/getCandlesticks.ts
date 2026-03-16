@@ -2,11 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import {
-  CandlestickPeriodSchema,
-  ProductIdSchema,
-} from '../../utils/schemas.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { CandlestickPeriodSchema, ProductIdSchema } from '../../utils/schemas';
 
 export function registerGetCandlesticks(
   server: McpServer,

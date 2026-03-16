@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { toJsonContent } from '../utils/formatting.js';
+import { toJsonContent } from '../utils/formatting';
 
 export function registerMarketsResource(
   server: McpServer,

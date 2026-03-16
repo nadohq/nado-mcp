@@ -13,8 +13,8 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-import type { ServerConfig } from './config.js';
-import type { DataEnv } from './dataEnv.js';
+import type { ServerConfig } from './config';
+import type { DataEnv } from './dataEnv';
 
 export type { NadoClient };
 

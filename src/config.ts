@@ -1,4 +1,4 @@
-import { ALL_DATA_ENVS, type DataEnv, getDataEnvConfig } from './dataEnv.js';
+import { ALL_DATA_ENVS, type DataEnv, getDataEnvConfig } from './dataEnv';
 
 import type { ChainEnv } from '@nadohq/client';
 

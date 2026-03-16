@@ -1,5 +1,5 @@
-import type { NadoContext, NadoContextWithSigner } from '../context.js';
-import { ToolExecutionError } from './errors.js';
+import type { NadoContext, NadoContextWithSigner } from '../context';
+import { ToolExecutionError } from './errors';
 
 /**
  * Asserts that the client has a configured signer (PRIVATE_KEY) and a resolved

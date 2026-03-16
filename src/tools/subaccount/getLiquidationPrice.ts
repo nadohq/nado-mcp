@@ -10,15 +10,15 @@ import {
 } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import { ToolExecutionError } from '../../utils/errors';
+import { toJsonContent } from '../../utils/formatting';
 import {
   type BalanceSide,
   BalanceSideSchema,
   ProductIdSchema,
   SubaccountNameSchema,
   SubaccountOwnerSchema,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 interface LiquidationPriceResult {
   productId: number;

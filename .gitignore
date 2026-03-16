@@ -28,6 +28,7 @@ coverage
 
 # Dependencies
 node_modules
+package-lock.json
 
 # eslint
 .eslintcache

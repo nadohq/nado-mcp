@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 
 export function registerGetTickers(
   server: McpServer,

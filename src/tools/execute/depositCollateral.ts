@@ -2,11 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { addDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
-import { requireSigner } from '../../utils/requireSigner.js';
-import { getTokenDecimals } from '../../utils/resolveMarket.js';
-import { ProductIdSchema, SAFETY_DISCLAIMER } from '../../utils/schemas.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { requireSigner } from '../../utils/requireSigner';
+import { getTokenDecimals } from '../../utils/resolveMarket';
+import { ProductIdSchema, SAFETY_DISCLAIMER } from '../../utils/schemas';
 
 export function registerDepositCollateral(
   server: McpServer,
@@ -49,10 +49,17 @@ export function registerDepositCollateral(
         'deposit_collateral',
         `Failed to deposit ${amount} of product ${productId}. Ensure the wallet has sufficient token balance and native token for gas.`,
         async () => {
-          await ctx.client.spot.approveAllowance({
+          const allowance = await ctx.client.spot.getTokenAllowance({
+            address: ctx.subaccountOwner,
             productId,
-            amount: tokenAmount,
           });
+
+          if (allowance.lt(tokenAmount)) {
+            await ctx.client.spot.approveAllowance({
+              productId,
+              amount: tokenAmount,
+            });
+          }
 
           return ctx.client.spot.deposit({
             subaccountName: ctx.subaccountName,

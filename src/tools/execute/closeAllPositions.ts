@@ -2,18 +2,18 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ProductEngineType, removeDecimals } from '@nadohq/client';
 import { z } from 'zod';
 
-import type { NadoContext } from '../../context.js';
-import { handleToolRequest } from '../../utils/handleToolRequest.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   buildCloseOrder,
-} from '../../utils/orderBuilder.js';
-import { requireSigner } from '../../utils/requireSigner.js';
+} from '../../utils/orderBuilder';
+import { requireSigner } from '../../utils/requireSigner';
 import {
   type BalanceSide,
   ProductIdsSchema,
   SAFETY_DISCLAIMER,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 export function registerCloseAllPositions(
   server: McpServer,
@@ -104,9 +104,23 @@ export function registerCloseAllPositions(
         );
       }
 
+      const positionsSummary: {
+        productId: number;
+        marginMode: 'cross' | 'isolated';
+        side: string;
+        size: number;
+      }[] = [];
+
       const crossOrders = await Promise.all(
         crossPositions.map(async (position) => {
           const size = removeDecimals(position.amount).toNumber();
+
+          positionsSummary.push({
+            productId: position.productId,
+            marginMode: 'cross',
+            side: size > 0 ? 'long' : 'short',
+            size: Math.abs(size),
+          });
 
           const orderParams = await buildCloseOrder({
             client: ctx.client,
@@ -129,6 +143,13 @@ export function registerCloseAllPositions(
       const isolatedOrders = await Promise.all(
         filteredIsolated.map(async (pos) => {
           const size = removeDecimals(pos.baseBalance.amount).toNumber();
+
+          positionsSummary.push({
+            productId: pos.baseBalance.productId,
+            marginMode: 'isolated',
+            side: size > 0 ? 'long' : 'short',
+            size: Math.abs(size),
+          });
 
           const orderParams = await buildCloseOrder({
             client: ctx.client,
@@ -159,26 +180,12 @@ export function registerCloseAllPositions(
             orders: allOrders,
           });
 
-          const crossSummary = crossPositions.map((p) => ({
-            productId: p.productId,
-            marginMode: 'cross' as const,
-            side: p.amount.isPositive() ? 'long' : 'short',
-            size: removeDecimals(p.amount.abs()).toNumber(),
-          }));
-
-          const isolatedSummary = filteredIsolated.map((p) => ({
-            productId: p.baseBalance.productId,
-            marginMode: 'isolated' as const,
-            side: p.baseBalance.amount.isPositive() ? 'long' : 'short',
-            size: removeDecimals(p.baseBalance.amount.abs()).toNumber(),
-          }));
-
           return {
             ...result,
             summary: {
               positionsClosed: allOrders.length,
               slippagePct: `${slippagePct}%`,
-              positions: [...crossSummary, ...isolatedSummary],
+              positions: positionsSummary,
             },
           };
         },
