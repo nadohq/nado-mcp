@@ -23,10 +23,7 @@ jobs:
         with:
           bun-version: latest
 
-      - run: bun install
-
-      - name: Check git workspace isn't dirty
-        run: git diff --exit-code --quiet
+      - run: bun install --frozen-lockfile
 
       - run: bun run build
 
