@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toBigDecimal } from '@nadohq/client';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -6,6 +7,8 @@ import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   buildPriceTriggerOrder,
+  resolveMarketIncrements,
+  roundToIncrement,
 } from '../../utils/orderBuilder';
 import { requireSigner } from '../../utils/requireSigner';
 import {
@@ -120,6 +123,15 @@ export function registerPlaceTriggerOrder(
     }) => {
       requireSigner('place_trigger_order', ctx);
 
+      const { priceIncrement } = await resolveMarketIncrements(
+        ctx.client,
+        productId,
+      );
+      const roundedTriggerPrice = roundToIncrement(
+        toBigDecimal(triggerPrice),
+        priceIncrement,
+      ).toNumber();
+
       const orderParams = await buildPriceTriggerOrder({
         client: ctx.client,
         productId,
@@ -130,6 +142,10 @@ export function registerPlaceTriggerOrder(
         marginMode,
         leverage,
       });
+
+      const resolvedBorrowMargin =
+        borrowMargin ??
+        (marginMode === 'isolated' && reduceOnly ? false : undefined);
 
       return handleToolRequest(
         'place_trigger_order',
@@ -145,11 +161,11 @@ export function registerPlaceTriggerOrder(
             triggerCriteria: {
               type: 'price' as const,
               criteria: {
-                triggerPrice,
+                triggerPrice: roundedTriggerPrice,
                 type: triggerType,
               },
             },
-            borrowMargin,
+            borrowMargin: resolvedBorrowMargin,
           }),
       );
     },

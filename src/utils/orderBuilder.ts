@@ -51,17 +51,28 @@ export interface BuiltOrderParams {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-interface MarketIncrements {
+export interface MarketIncrements {
   priceIncrement: BigNumber;
   sizeIncrement: BigNumber;
 }
 
-async function resolveMarketIncrements(
+let allMarketsCache:
+  | Awaited<ReturnType<NadoClient['market']['getAllMarkets']>>
+  | undefined;
+
+/** @internal Exposed for testing only. */
+export function _resetMarketDataCache(): void {
+  allMarketsCache = undefined;
+}
+
+export async function resolveMarketIncrements(
   client: NadoClient,
   productId: number,
 ): Promise<MarketIncrements> {
-  const allMarkets = await client.market.getAllMarkets();
-  const market = allMarkets.find((m) => m.productId === productId);
+  if (!allMarketsCache) {
+    allMarketsCache = await client.market.getAllMarkets();
+  }
+  const market = allMarketsCache.find((m) => m.productId === productId);
   if (!market) {
     throw new Error(
       `Unknown product ${productId}. Use get_all_markets to find valid product IDs.`,
@@ -115,29 +126,27 @@ async function resolvePrice({
   const marketPrice = await client.market.getLatestMarketPrice({ productId });
   const slippageFrac = slippagePct / 100;
 
-  const slippageMultiplier = 1 + slippageFrac;
-
   if (isLong) {
-    const bidPrice = marketPrice.bid;
-    if (bidPrice.lte(0)) {
+    const askPrice = marketPrice.ask;
+    if (askPrice.lte(0)) {
       throw new Error(
-        `No bid price available for product ${productId}. Cannot place market buy order.`,
+        `No ask price available for product ${productId}. Cannot place market buy order.`,
       );
     }
     return roundToIncrement(
-      bidPrice.times(slippageMultiplier),
+      askPrice.times(1 + slippageFrac),
       priceIncrement,
     ).toFixed();
   }
 
-  const askPrice = marketPrice.ask;
-  if (askPrice.lte(0)) {
+  const bidPrice = marketPrice.bid;
+  if (bidPrice.lte(0)) {
     throw new Error(
-      `No ask price available for product ${productId}. Cannot place market sell order.`,
+      `No bid price available for product ${productId}. Cannot place market sell order.`,
     );
   }
   return roundToIncrement(
-    askPrice.dividedBy(slippageMultiplier),
+    bidPrice.times(1 - slippageFrac),
     priceIncrement,
   ).toFixed();
 }
@@ -370,11 +379,21 @@ export async function buildPriceTriggerOrder(
     order: {
       price: resolvedPrice,
       amount: signedAmountX18.toFixed(0),
-      expiration: getExpiration(),
+      expiration: getTriggerOrderExpiration(),
       nonce: getOrderNonce(),
       appendix,
     },
   };
+}
+
+/**
+ * Trigger orders (TP/SL, stop-limit, stop-market) should never expire.
+ * The web UI uses Date.now() (milliseconds) as the expiration field; since
+ * the engine interprets this value as seconds, the resulting timestamp is
+ * effectively infinite (~year 58000).
+ */
+function getTriggerOrderExpiration(): number {
+  return Date.now();
 }
 
 /**

@@ -1,12 +1,18 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ProductEngineType, removeDecimals } from '@nadohq/client';
+import {
+  ProductEngineType,
+  getOrderNonce,
+  packOrderAppendix,
+  removeDecimals,
+} from '@nadohq/client';
+import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
-  buildCloseOrder,
+  roundToIncrement,
 } from '../../utils/orderBuilder';
 import { requireSigner } from '../../utils/requireSigner';
 import {
@@ -14,6 +20,25 @@ import {
   ProductIdsSchema,
   SAFETY_DISCLAIMER,
 } from '../../utils/schemas';
+
+const REDUCE_ONLY_IOC_APPENDIX = packOrderAppendix({
+  orderExecutionType: 'ioc',
+  reduceOnly: true,
+});
+
+const REDUCE_ONLY_IOC_ISOLATED_APPENDIX = packOrderAppendix({
+  orderExecutionType: 'ioc',
+  reduceOnly: true,
+  isolated: { margin: 0 },
+});
+
+const DEFAULT_ORDER_LIFETIME_SECONDS = 1000;
+
+function getExpiration(
+  secondsInFuture = DEFAULT_ORDER_LIFETIME_SECONDS,
+): number {
+  return Math.floor(Date.now() / 1000) + secondsInFuture;
+}
 
 export function registerCloseAllPositions(
   server: McpServer,
@@ -60,7 +85,7 @@ export function registerCloseAllPositions(
     }) => {
       requireSigner('close_all_positions', ctx);
 
-      const [summary, isolatedPositions] = await Promise.all([
+      const [summary, isolatedPositions, allMarkets] = await Promise.all([
         ctx.client.subaccount.getSubaccountSummary({
           subaccountOwner: ctx.subaccountOwner,
           subaccountName: ctx.subaccountName,
@@ -71,6 +96,7 @@ export function registerCloseAllPositions(
             subaccountName: ctx.subaccountName,
           })
           .catch(() => []),
+        ctx.client.market.getAllMarkets(),
       ]);
 
       const matchesFilter = (
@@ -104,73 +130,111 @@ export function registerCloseAllPositions(
         );
       }
 
+      const affectedProductIds = [
+        ...new Set([
+          ...crossPositions.map((b) => b.productId),
+          ...filteredIsolated.map((p) => p.baseBalance.productId),
+        ]),
+      ];
+
+      await Promise.all([
+        ctx.client.market
+          .cancelProductOrders({
+            subaccountOwner: ctx.subaccountOwner,
+            subaccountName: ctx.subaccountName,
+            productIds: affectedProductIds,
+          })
+          .catch(() => {}),
+        ctx.client.market
+          .cancelTriggerProductOrders({
+            subaccountOwner: ctx.subaccountOwner,
+            subaccountName: ctx.subaccountName,
+            productIds: affectedProductIds,
+          })
+          .catch(() => {}),
+      ]);
+
+      const marketByProductId = new Map(
+        allMarkets.map((m) => [
+          m.productId,
+          {
+            priceIncrement: m.priceIncrement,
+            sizeIncrement: m.sizeIncrement,
+          },
+        ]),
+      );
+
       const positionsSummary: {
         productId: number;
         marginMode: 'cross' | 'isolated';
         side: string;
-        size: number;
+        size: string;
       }[] = [];
 
-      const crossOrders = await Promise.all(
-        crossPositions.map(async (position) => {
-          const size = removeDecimals(position.amount).toNumber();
+      function buildCloseOrderFromBalance(
+        balance: {
+          productId: number;
+          amount: BigNumber;
+          oraclePrice: BigNumber;
+        },
+        marginMode: 'cross' | 'isolated',
+      ) {
+        const market = marketByProductId.get(balance.productId);
+        if (!market) {
+          throw new Error(`No market found for product ${balance.productId}.`);
+        }
 
-          positionsSummary.push({
-            productId: position.productId,
-            marginMode: 'cross',
-            side: size > 0 ? 'long' : 'short',
-            size: Math.abs(size),
-          });
+        const closeAmount = roundToIncrement(
+          balance.amount.negated(),
+          market.sizeIncrement,
+        );
+        if (closeAmount.isZero()) {
+          throw new Error(
+            `Close amount is zero after rounding for product ${balance.productId}.`,
+          );
+        }
 
-          const orderParams = await buildCloseOrder({
-            client: ctx.client,
-            productId: position.productId,
-            amount: -size,
-            slippagePct,
-          });
+        const isBuy = closeAmount.isPositive();
+        const slippageMultiplier = isBuy
+          ? 1 + slippagePct / 100
+          : 1 - slippagePct / 100;
+        const closePrice = roundToIncrement(
+          balance.oraclePrice.times(slippageMultiplier),
+          market.priceIncrement,
+        );
 
-          return {
-            ...orderParams,
-            order: {
-              subaccountOwner: ctx.subaccountOwner,
-              subaccountName: ctx.subaccountName,
-              ...orderParams.order,
-            },
-          };
-        }),
-      );
+        const appendix =
+          marginMode === 'isolated'
+            ? REDUCE_ONLY_IOC_ISOLATED_APPENDIX
+            : REDUCE_ONLY_IOC_APPENDIX;
 
-      const isolatedOrders = await Promise.all(
-        filteredIsolated.map(async (pos) => {
-          const size = removeDecimals(pos.baseBalance.amount).toNumber();
+        positionsSummary.push({
+          productId: balance.productId,
+          marginMode,
+          side: balance.amount.isPositive() ? 'long' : 'short',
+          size: removeDecimals(balance.amount.abs()).toFixed(),
+        });
 
-          positionsSummary.push({
-            productId: pos.baseBalance.productId,
-            marginMode: 'isolated',
-            side: size > 0 ? 'long' : 'short',
-            size: Math.abs(size),
-          });
+        return {
+          productId: balance.productId,
+          order: {
+            subaccountOwner: ctx.subaccountOwner,
+            subaccountName: ctx.subaccountName,
+            price: closePrice.toFixed(),
+            amount: closeAmount.toFixed(0),
+            expiration: getExpiration(),
+            nonce: getOrderNonce(),
+            appendix,
+          },
+        };
+      }
 
-          const orderParams = await buildCloseOrder({
-            client: ctx.client,
-            productId: pos.baseBalance.productId,
-            amount: -size,
-            slippagePct,
-            marginMode: 'isolated',
-          });
-
-          return {
-            ...orderParams,
-            order: {
-              subaccountOwner: ctx.subaccountOwner,
-              subaccountName: ctx.subaccountName,
-              ...orderParams.order,
-            },
-          };
-        }),
-      );
-
-      const allOrders = [...crossOrders, ...isolatedOrders];
+      const allOrders = [
+        ...crossPositions.map((b) => buildCloseOrderFromBalance(b, 'cross')),
+        ...filteredIsolated.map((p) =>
+          buildCloseOrderFromBalance(p.baseBalance, 'isolated'),
+        ),
+      ];
 
       return handleToolRequest(
         'close_all_positions',
