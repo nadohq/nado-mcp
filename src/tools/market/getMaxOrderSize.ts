@@ -1,20 +1,21 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 import { toBigDecimal } from '@nadohq/client';
 import { z } from 'zod';
 
+import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
+import { resolveSubaccount } from '../../utils/resolveSubaccount';
 import {
   type BalanceSide,
   BalanceSideSchema,
+  OptionalSubaccountNameSchema,
+  OptionalSubaccountOwnerSchema,
   ProductIdSchema,
-  SubaccountNameSchema,
-  SubaccountOwnerSchema,
 } from '../../utils/schemas';
 
 export function registerGetMaxOrderSize(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'get_max_order_size',
@@ -23,40 +24,37 @@ export function registerGetMaxOrderSize(
       description:
         'Calculate the maximum order size a subaccount can place for a given market, side, and price. Use this before placing orders to understand buying/selling power. Takes into account current margin, positions, and risk limits. For checking maximum withdrawal amount instead, use get_max_withdrawable.',
       inputSchema: {
-        subaccountOwner: SubaccountOwnerSchema,
-        subaccountName: SubaccountNameSchema,
+        subaccountOwner: OptionalSubaccountOwnerSchema,
+        subaccountName: OptionalSubaccountNameSchema,
         productId: ProductIdSchema,
         price: z.number().positive().describe('Limit price for the order'),
         side: BalanceSideSchema,
       },
       annotations: { readOnlyHint: true },
     },
-    async ({
-      subaccountOwner,
-      subaccountName,
-      productId,
-      price,
-      side,
-    }: {
-      subaccountOwner: string;
-      subaccountName: string;
+    async (input: {
+      subaccountOwner?: string;
+      subaccountName?: string;
       productId: number;
       price: number;
       side: BalanceSide;
-    }) =>
-      handleToolRequest(
+    }) => {
+      const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
+
+      return handleToolRequest(
         'get_max_order_size',
-        `Failed to calculate max order size for product ${productId}.`,
+        `Failed to calculate max order size for product ${input.productId}.`,
         async () => {
-          const maxSize = await client.market.getMaxOrderSize({
+          const maxSize = await ctx.client.market.getMaxOrderSize({
             subaccountOwner,
             subaccountName,
-            productId,
-            price: toBigDecimal(price),
-            side,
+            productId: input.productId,
+            price: toBigDecimal(input.price),
+            side: input.side,
           });
           return { maxOrderSize: maxSize };
         },
-      ),
+      );
+    },
   );
 }

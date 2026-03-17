@@ -1,16 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 
+import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
+import { resolveSubaccount } from '../../utils/resolveSubaccount';
 import {
+  OptionalSubaccountNameSchema,
+  OptionalSubaccountOwnerSchema,
   ProductIdsSchema,
-  SubaccountNameSchema,
-  SubaccountOwnerSchema,
 } from '../../utils/schemas';
 
 export function registerGetOpenOrders(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'get_open_orders',
@@ -19,32 +20,31 @@ export function registerGetOpenOrders(
       description:
         'Get all open limit orders for a subaccount across one or more markets. Returns pending orders from the off-chain engine orderbook. Use this to see what orders are currently resting in the book. For historical (filled/cancelled) orders, use get_historical_orders instead.',
       inputSchema: {
-        subaccountOwner: SubaccountOwnerSchema,
-        subaccountName: SubaccountNameSchema,
+        subaccountOwner: OptionalSubaccountOwnerSchema,
+        subaccountName: OptionalSubaccountNameSchema,
         productIds: ProductIdsSchema.describe(
           'Product IDs to fetch open orders for',
         ),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({
-      subaccountOwner,
-      subaccountName,
-      productIds,
-    }: {
-      subaccountOwner: string;
-      subaccountName: string;
+    async (input: {
+      subaccountOwner?: string;
+      subaccountName?: string;
       productIds: number[];
-    }) =>
-      handleToolRequest(
+    }) => {
+      const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
+
+      return handleToolRequest(
         'get_open_orders',
         `Failed to fetch open orders for ${subaccountOwner}/${subaccountName}. Use get_all_markets to list valid product IDs.`,
         () =>
-          client.market.getOpenSubaccountMultiProductOrders({
+          ctx.client.market.getOpenSubaccountMultiProductOrders({
             subaccountOwner,
             subaccountName,
-            productIds,
+            productIds: input.productIds,
           }),
-      ),
+      );
+    },
   );
 }

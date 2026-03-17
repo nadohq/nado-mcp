@@ -61,37 +61,37 @@ export function registerTools(server: McpServer, ctx: NadoContext): void {
   registerGetCandlesticks(server, client);
   registerGetFundingRate(server, client);
   registerGetMultiProductFundingRates(server, client);
-  registerGetMaxOrderSize(server, client);
+  registerGetMaxOrderSize(server, ctx);
   registerGetPerpPrices(server, client);
   registerGetMultiProductPerpPrices(server, client);
-  registerGetOpenOrders(server, client);
-  registerGetTriggerOrders(server, client);
+  registerGetOpenOrders(server, ctx);
+  registerGetTriggerOrders(server, ctx);
 
   // Subaccount
   registerGetSubaccountSummary(server, ctx);
-  registerGetIsolatedPositions(server, client);
-  registerGetFeeRates(server, client);
-  registerGetMaxWithdrawable(server, client);
-  registerGetLiquidationPrice(server, client);
-  registerListSubaccounts(server, client);
+  registerGetIsolatedPositions(server, ctx);
+  registerGetFeeRates(server, ctx);
+  registerGetMaxWithdrawable(server, ctx);
+  registerGetLiquidationPrice(server, ctx);
+  registerListSubaccounts(server, ctx);
 
   // NLP vault
   registerGetNlpPoolInfo(server, client);
-  registerGetNlpLockedBalances(server, client);
+  registerGetNlpLockedBalances(server, ctx);
   registerGetNlpSnapshots(server, client);
-  registerGetNlpMaxMintBurn(server, client);
+  registerGetNlpMaxMintBurn(server, ctx);
 
   // Indexer / historical
   registerGetAccountStats(server, ctx);
-  registerGetHistoricalOrders(server, client);
-  registerGetMatchEvents(server, client);
-  registerGetFundingPayments(server, client);
+  registerGetHistoricalOrders(server, ctx);
+  registerGetMatchEvents(server, ctx);
+  registerGetFundingPayments(server, ctx);
   registerGetTickers(server, client);
   registerGetLeaderboard(server, client);
   registerGetOraclePrices(server, client);
   registerGetMarketSnapshots(server, client);
   registerGetProductSnapshots(server, client);
-  registerGetMultiSubaccountSnapshots(server, client);
+  registerGetMultiSubaccountSnapshots(server, ctx);
 
   // Execute / write operations
   registerPlaceOrder(server, ctx);

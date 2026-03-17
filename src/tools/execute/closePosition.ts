@@ -72,63 +72,33 @@ export function registerClosePosition(
           !p.baseBalance.amount.isZero(),
       );
 
-      if (!hasCrossPosition && !isolatedPos) {
+      let size: number;
+      let marginMode: 'cross' | 'isolated';
+
+      if (hasCrossPosition) {
+        size = removeDecimals(crossBalance.amount).toNumber();
+        marginMode = 'cross';
+      } else if (isolatedPos) {
+        size = removeDecimals(isolatedPos.baseBalance.amount).toNumber();
+        marginMode = 'isolated';
+      } else {
         throw new Error(
           `No open position found for product ${productId} (checked both cross and isolated margin). ` +
             'Use get_subaccount_summary to check current positions.',
         );
       }
 
-      if (hasCrossPosition) {
-        const size = removeDecimals(crossBalance.amount).toNumber();
-
-        const orderParams = await buildCloseOrder({
-          client: ctx.client,
-          productId,
-          amount: -size,
-          slippagePct,
-        });
-
-        return handleToolRequest(
-          'close_position',
-          `Failed to close position for product ${productId}`,
-          async () => {
-            const result = await ctx.client.market.placeOrder({
-              ...orderParams,
-              order: {
-                subaccountOwner: ctx.subaccountOwner,
-                subaccountName: ctx.subaccountName,
-                ...orderParams.order,
-              },
-            });
-
-            return {
-              ...result,
-              summary: {
-                productId,
-                marginMode: 'cross',
-                closedSide: size > 0 ? 'long' : 'short',
-                closedSize: Math.abs(size),
-                slippagePct: `${slippagePct}%`,
-              },
-            };
-          },
-        );
-      }
-
-      const size = removeDecimals(isolatedPos!.baseBalance.amount).toNumber();
-
       const orderParams = await buildCloseOrder({
         client: ctx.client,
         productId,
         amount: -size,
         slippagePct,
-        marginMode: 'isolated',
+        marginMode: marginMode === 'isolated' ? 'isolated' : undefined,
       });
 
       return handleToolRequest(
         'close_position',
-        `Failed to close isolated position for product ${productId}`,
+        `Failed to close ${marginMode} position for product ${productId}`,
         async () => {
           const result = await ctx.client.market.placeOrder({
             ...orderParams,
@@ -143,7 +113,7 @@ export function registerClosePosition(
             ...result,
             summary: {
               productId,
-              marginMode: 'isolated',
+              marginMode,
               closedSide: size > 0 ? 'long' : 'short',
               closedSize: Math.abs(size),
               slippagePct: `${slippagePct}%`,

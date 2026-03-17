@@ -1,16 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
+import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
+import { resolveSubaccount } from '../../utils/resolveSubaccount';
 import {
-  SubaccountNameSchema,
-  SubaccountOwnerSchema,
+  OptionalSubaccountNameSchema,
+  OptionalSubaccountOwnerSchema,
 } from '../../utils/schemas';
 
 export function registerGetMultiSubaccountSnapshots(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'get_multi_subaccount_snapshots',
@@ -19,8 +20,8 @@ export function registerGetMultiSubaccountSnapshots(
       description:
         'Get historical equity and PnL snapshots for one or more subaccounts at specific timestamps. Use this to build portfolio performance charts or compare account value over time. Provide Unix timestamps for the points in time you want snapshots for.',
       inputSchema: {
-        subaccountOwner: SubaccountOwnerSchema,
-        subaccountName: SubaccountNameSchema,
+        subaccountOwner: OptionalSubaccountOwnerSchema,
+        subaccountName: OptionalSubaccountNameSchema,
         timestamps: z
           .array(z.number().int())
           .min(1)
@@ -30,23 +31,22 @@ export function registerGetMultiSubaccountSnapshots(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({
-      subaccountOwner,
-      subaccountName,
-      timestamps,
-    }: {
-      subaccountOwner: string;
-      subaccountName: string;
+    async (input: {
+      subaccountOwner?: string;
+      subaccountName?: string;
       timestamps: number[];
-    }) =>
-      handleToolRequest(
+    }) => {
+      const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
+
+      return handleToolRequest(
         'get_multi_subaccount_snapshots',
         `Failed to fetch subaccount snapshots for ${subaccountOwner}/${subaccountName}.`,
         () =>
-          client.context.indexerClient.getMultiSubaccountSnapshots({
+          ctx.client.context.indexerClient.getMultiSubaccountSnapshots({
             subaccounts: [{ subaccountOwner, subaccountName }],
-            timestamps,
+            timestamps: input.timestamps,
           }),
-      ),
+      );
+    },
   );
 }

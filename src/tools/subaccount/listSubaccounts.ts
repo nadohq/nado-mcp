@@ -1,13 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
+import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
 import { PaginationLimitSchema } from '../../utils/schemas';
 
 export function registerListSubaccounts(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'list_subaccounts',
@@ -27,15 +27,18 @@ export function registerListSubaccounts(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ address, limit }: { address?: string; limit: number }) =>
-      handleToolRequest(
+    async ({ address, limit }: { address?: string; limit: number }) => {
+      const resolvedAddress = address || ctx.subaccountOwner;
+
+      return handleToolRequest(
         'list_subaccounts',
-        `Failed to list subaccounts${address ? ` for ${address}` : ''}.`,
+        `Failed to list subaccounts${resolvedAddress ? ` for ${resolvedAddress}` : ''}.`,
         () =>
-          client.context.indexerClient.listSubaccounts({
-            address,
+          ctx.client.context.indexerClient.listSubaccounts({
+            address: resolvedAddress,
             limit,
           }),
-      ),
+      );
+    },
   );
 }

@@ -1,0 +1,32 @@
+name: Build & Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Check git workspace isn't dirty
+        run: git diff --exit-code --quiet
+
+      - run: bun run build
+
+      - run: bun run typecheck
+
+      - run: bun run lint:check

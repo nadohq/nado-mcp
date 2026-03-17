@@ -1,17 +1,18 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 
+import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
+import { resolveSubaccount } from '../../utils/resolveSubaccount';
 import {
+  OptionalSubaccountNameSchema,
+  OptionalSubaccountOwnerSchema,
   PaginationLimitSchema,
   ProductIdsSchema,
-  SubaccountNameSchema,
-  SubaccountOwnerSchema,
 } from '../../utils/schemas';
 
 export function registerGetHistoricalOrders(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'get_historical_orders',
@@ -20,8 +21,8 @@ export function registerGetHistoricalOrders(
       description:
         'Fetch historical orders (filled, cancelled, expired) for a subaccount from the indexer. Use this to review past trading activity. For currently open/resting orders, use get_open_orders instead. For trigger orders (TP/SL), use get_trigger_orders.',
       inputSchema: {
-        subaccountOwner: SubaccountOwnerSchema,
-        subaccountName: SubaccountNameSchema,
+        subaccountOwner: OptionalSubaccountOwnerSchema,
+        subaccountName: OptionalSubaccountNameSchema,
         productIds: ProductIdsSchema.optional().describe(
           'Filter by product IDs (omit for all products)',
         ),
@@ -29,26 +30,24 @@ export function registerGetHistoricalOrders(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({
-      subaccountOwner,
-      subaccountName,
-      productIds,
-      limit,
-    }: {
-      subaccountOwner: string;
-      subaccountName: string;
+    async (input: {
+      subaccountOwner?: string;
+      subaccountName?: string;
       productIds?: number[];
       limit: number;
-    }) =>
-      handleToolRequest(
+    }) => {
+      const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
+
+      return handleToolRequest(
         'get_historical_orders',
         `Failed to fetch orders for ${subaccountOwner}/${subaccountName}.`,
         () =>
-          client.market.getHistoricalOrders({
+          ctx.client.market.getHistoricalOrders({
             subaccounts: [{ subaccountOwner, subaccountName }],
-            productIds,
-            limit,
+            productIds: input.productIds,
+            limit: input.limit,
           }),
-      ),
+      );
+    },
   );
 }

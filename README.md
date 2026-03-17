@@ -1,21 +1,23 @@
-# nado-mcp
+# @nadohq/nado-mcp
 
-MCP (Model Context Protocol) server for interacting with [Nado](https://nado.xyz). Provides AI assistants with tools to query market data, subaccount information, and historical trading data.
+[![npm version](https://img.shields.io/npm/v/@nadohq/nado-mcp)](https://www.npmjs.com/package/@nadohq/nado-mcp)
 
-## Prerequisites
+MCP (Model Context Protocol) server for interacting with [Nado](https://nado.xyz) — a decentralized derivatives exchange on the Ink blockchain. Gives AI assistants tools to query market data, manage positions, place orders, and access historical trading data.
 
-- [Node.js](https://nodejs.org/) >= 18
-- [Bun](https://bun.sh/) (package manager & runtime)
+## Installation
 
-## Quick Start
+Zero-install via bunx (recommended):
 
 ```bash
-git clone <repo-url> && cd nado-mcp
-bun install
-bun run build
+bunx @nadohq/nado-mcp
 ```
 
-That's it — the built server is at `dist/index.js`. Configure environment variables in your MCP client config (see below).
+Or install globally:
+
+```bash
+bun add -g @nadohq/nado-mcp
+nado-mcp
+```
 
 ## MCP Client Setup
 
@@ -27,8 +29,8 @@ Add to your `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
 {
   "mcpServers": {
     "nado": {
-      "command": "node",
-      "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
+      "command": "bunx",
+      "args": ["@nadohq/nado-mcp"],
       "env": {
         "DATA_ENV": "nadoMainnet",
         "PRIVATE_KEY": "0xLINKED_SIGNER_PRIVATE_KEY",
@@ -47,8 +49,8 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "nado": {
-      "command": "node",
-      "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
+      "command": "bunx",
+      "args": ["@nadohq/nado-mcp"],
       "env": {
         "DATA_ENV": "nadoMainnet",
         "PRIVATE_KEY": "0xLINKED_SIGNER_PRIVATE_KEY",
@@ -59,7 +61,7 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-Replace `/absolute/path/to/nado-mcp` with the actual path where you cloned the repo. Set `DATA_ENV` to `nadoTestnet` to connect to the [testnet](https://testnet.nado.xyz) instead.
+Set `DATA_ENV` to `nadoTestnet` to connect to the [testnet](https://testnet.nado.xyz) instead.
 
 ## Security
 
@@ -202,13 +204,19 @@ Set these in the `"env"` block of your MCP client config (recommended). A `.env`
 ## Development
 
 ```bash
+git clone https://github.com/nadohq/nado-mcp.git && cd nado-mcp
+bun install
+bun run build
+```
+
+```bash
 bun run dev        # Watch mode
 bun run build      # Build for production
 bun run typecheck  # Type check
 bun run lint       # Lint and format
 ```
 
-## Architecture
+### Architecture
 
 The server follows a modular registration pattern:
 
@@ -217,3 +225,10 @@ The server follows a modular registration pattern:
 - **`src/utils/`** — Shared schemas, error classes, and formatting utilities
 
 Each tool and resource is registered on the McpServer instance during startup via its module's `register*` function.
+
+## Contributing
+
+1. Fork the repo and create a feature branch
+2. Install dependencies: `bun install`
+3. Make your changes and ensure `bun run typecheck && bun run lint:check && bun run build` passes
+4. Open a pull request against `main`

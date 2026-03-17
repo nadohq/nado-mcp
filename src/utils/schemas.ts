@@ -17,6 +17,14 @@ export const SubaccountOwnerSchema = z
   .refine(isAddress, 'Must be a valid Ethereum address')
   .describe('Wallet address that owns the subaccount');
 
+export const OptionalSubaccountOwnerSchema = z
+  .string()
+  .refine((v) => v === '' || isAddress(v), 'Must be a valid Ethereum address')
+  .optional()
+  .describe(
+    'Wallet address that owns the subaccount. Omit to use the configured wallet.',
+  );
+
 const MAX_SUBACCOUNT_NAME_BYTES = 12;
 
 export const SubaccountNameSchema = z
@@ -26,6 +34,16 @@ export const SubaccountNameSchema = z
     (v) => toBytes(v).length <= MAX_SUBACCOUNT_NAME_BYTES,
     `Subaccount name must be at most ${MAX_SUBACCOUNT_NAME_BYTES} bytes`,
   )
+  .describe('Subaccount name (max 12 bytes, defaults to "default")');
+
+export const OptionalSubaccountNameSchema = z
+  .string()
+  .default('default')
+  .refine(
+    (v) => toBytes(v).length <= MAX_SUBACCOUNT_NAME_BYTES,
+    `Subaccount name must be at most ${MAX_SUBACCOUNT_NAME_BYTES} bytes`,
+  )
+  .optional()
   .describe('Subaccount name (max 12 bytes, defaults to "default")');
 
 export const BalanceSideSchema = z

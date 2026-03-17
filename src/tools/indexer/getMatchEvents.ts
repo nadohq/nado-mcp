@@ -1,13 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 import type { IndexerMatchEvent } from '@nadohq/indexer-client';
 import { z } from 'zod';
 
+import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
+import { resolveSubaccount } from '../../utils/resolveSubaccount';
 import {
+  OptionalSubaccountNameSchema,
+  OptionalSubaccountOwnerSchema,
   ProductIdsSchema,
-  SubaccountNameSchema,
-  SubaccountOwnerSchema,
 } from '../../utils/schemas';
 
 const PAGE_SIZE = 500;
@@ -15,7 +16,7 @@ const MAX_PAGES = 20;
 
 export function registerGetMatchEvents(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'get_match_events',
@@ -24,8 +25,8 @@ export function registerGetMatchEvents(
       description:
         'Fetch historical trade/match events for a subaccount, showing fills and execution details. Use this to analyze trade execution quality (fill prices, sizes, timestamps). For order-level history (including unfilled orders), use get_historical_orders instead.',
       inputSchema: {
-        subaccountOwner: SubaccountOwnerSchema,
-        subaccountName: SubaccountNameSchema,
+        subaccountOwner: OptionalSubaccountOwnerSchema,
+        subaccountName: OptionalSubaccountNameSchema,
         productIds: ProductIdsSchema.optional().describe(
           'Filter by product IDs (omit for all products)',
         ),
@@ -45,20 +46,16 @@ export function registerGetMatchEvents(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({
-      subaccountOwner,
-      subaccountName,
-      productIds,
-      limit,
-      maxTimestampInclusive,
-    }: {
-      subaccountOwner: string;
-      subaccountName: string;
+    async (input: {
+      subaccountOwner?: string;
+      subaccountName?: string;
       productIds?: number[];
       limit: number;
       maxTimestampInclusive?: number;
-    }) =>
-      handleToolRequest(
+    }) => {
+      const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
+
+      return handleToolRequest(
         'get_match_events',
         `Failed to fetch match events for ${subaccountOwner}/${subaccountName}.`,
         async () => {
@@ -66,17 +63,20 @@ export function registerGetMatchEvents(
           let cursor: string | undefined;
           let pages = 0;
 
-          while (allEvents.length < limit && pages < MAX_PAGES) {
-            const pageLimit = Math.min(PAGE_SIZE, limit - allEvents.length);
+          while (allEvents.length < input.limit && pages < MAX_PAGES) {
+            const pageLimit = Math.min(
+              PAGE_SIZE,
+              input.limit - allEvents.length,
+            );
             const response =
-              await client.context.indexerClient.getPaginatedSubaccountMatchEvents(
+              await ctx.client.context.indexerClient.getPaginatedSubaccountMatchEvents(
                 {
                   subaccountOwner,
                   subaccountName,
-                  productIds,
+                  productIds: input.productIds,
                   limit: pageLimit,
                   startCursor: cursor,
-                  maxTimestampInclusive,
+                  maxTimestampInclusive: input.maxTimestampInclusive,
                 },
               );
 
@@ -91,6 +91,7 @@ export function registerGetMatchEvents(
 
           return allEvents;
         },
-      ),
+      );
+    },
   );
 }

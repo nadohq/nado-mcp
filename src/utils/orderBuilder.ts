@@ -13,7 +13,22 @@ import BigNumber from 'bignumber.js';
 
 export const DEFAULT_SLIPPAGE_PCT = 2;
 
-function roundToIncrement(value: BigNumber, increment: BigNumber): BigNumber {
+const DEFAULT_ORDER_LIFETIME_SECONDS = 1000;
+
+/**
+ * Engine order expiration in seconds from now.
+ * The engine interprets this field as a unix timestamp in seconds.
+ */
+function getExpiration(
+  secondsInFuture = DEFAULT_ORDER_LIFETIME_SECONDS,
+): number {
+  return Math.floor(Date.now() / 1000) + secondsInFuture;
+}
+
+export function roundToIncrement(
+  value: BigNumber,
+  increment: BigNumber,
+): BigNumber {
   if (increment.isZero()) return value;
   return value
     .dividedBy(increment)
@@ -69,7 +84,7 @@ function resolveAmount(
 ): ResolvedAmount {
   const isLong = amount > 0;
   const absAmountX18 = roundToIncrement(
-    toBigDecimal(addDecimals(Math.abs(amount))),
+    addDecimals(toBigDecimal(Math.abs(amount))),
     sizeIncrement,
   );
   const signedAmountX18 = isLong ? absAmountX18 : absAmountX18.negated();
@@ -94,11 +109,13 @@ async function resolvePrice({
   price,
 }: ResolvePriceInput): Promise<string> {
   if (price != null) {
-    return roundToIncrement(new BigNumber(price), priceIncrement).toFixed();
+    return roundToIncrement(toBigDecimal(price), priceIncrement).toFixed();
   }
 
   const marketPrice = await client.market.getLatestMarketPrice({ productId });
   const slippageFrac = slippagePct / 100;
+
+  const slippageMultiplier = 1 + slippageFrac;
 
   if (isLong) {
     const bidPrice = marketPrice.bid;
@@ -108,7 +125,7 @@ async function resolvePrice({
       );
     }
     return roundToIncrement(
-      bidPrice.times(1 + slippageFrac),
+      bidPrice.times(slippageMultiplier),
       priceIncrement,
     ).toFixed();
   }
@@ -120,7 +137,7 @@ async function resolvePrice({
     );
   }
   return roundToIncrement(
-    askPrice.times(1 - slippageFrac),
+    askPrice.dividedBy(slippageMultiplier),
     priceIncrement,
   ).toFixed();
 }
@@ -129,8 +146,10 @@ function computeIsolatedMargin(
   amount: number,
   resolvedPrice: string,
   leverage: number,
-): BigDecimalish {
-  return addDecimals(Math.abs((amount * Number(resolvedPrice)) / leverage));
+): BigNumber {
+  return addDecimals(
+    toBigDecimal(Math.abs(amount)).times(resolvedPrice).dividedBy(leverage),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +229,7 @@ export async function buildEngineOrder(
     order: {
       price: resolvedPrice,
       amount: signedAmountX18.toFixed(0),
-      expiration: Date.now(),
+      expiration: getExpiration(),
       nonce: getOrderNonce(),
       appendix,
     },
@@ -268,7 +287,7 @@ export async function buildCloseOrder(
     order: {
       price: resolvedPrice,
       amount: signedAmountX18.toFixed(0),
-      expiration: Date.now(),
+      expiration: getExpiration(),
       nonce: getOrderNonce(),
       appendix,
     },
@@ -351,7 +370,7 @@ export async function buildPriceTriggerOrder(
     order: {
       price: resolvedPrice,
       amount: signedAmountX18.toFixed(0),
-      expiration: Date.now(),
+      expiration: getExpiration(),
       nonce: getOrderNonce(),
       appendix,
     },

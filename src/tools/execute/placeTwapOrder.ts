@@ -1,12 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
-  BigDecimals,
   addDecimals,
   packOrderAppendix,
   removeDecimals,
   toBigDecimal,
 } from '@nadohq/client';
-import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -14,6 +12,7 @@ import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   calculateTwapExpiration,
+  roundToIncrement,
 } from '../../utils/orderBuilder';
 import { requireSigner } from '../../utils/requireSigner';
 import {
@@ -22,14 +21,6 @@ import {
   ProductIdSchema,
   SAFETY_DISCLAIMER,
 } from '../../utils/schemas';
-
-function roundToIncrement(value: BigNumber, increment: BigNumber): BigNumber {
-  if (increment.isZero()) return value;
-  return value
-    .dividedBy(increment)
-    .integerValue(BigNumber.ROUND_DOWN)
-    .times(increment);
-}
 
 export function registerPlaceTwapOrder(
   server: McpServer,
@@ -112,14 +103,18 @@ export function registerPlaceTwapOrder(
           `Unknown product ${productId}. Use get_all_markets to find valid product IDs.`,
         );
       }
-      const { sizeIncrement } = market;
+      const { sizeIncrement, priceIncrement } = market;
 
       const isLong = side === 'long';
 
-      const perpPrices = await ctx.client.perp.getPerpPrices({ productId });
-      const refPrice = perpPrices.indexPrice;
+      const marketPrice = await ctx.client.market.getLatestMarketPrice({
+        productId,
+      });
+      const refPrice = isLong ? marketPrice.ask : marketPrice.bid;
       if (refPrice.lte(0)) {
-        throw new Error(`No oracle price available for product ${productId}.`);
+        throw new Error(
+          `No ${isLong ? 'ask' : 'bid'} price available for product ${productId}.`,
+        );
       }
 
       const perOrderAmount = roundToIncrement(
@@ -130,7 +125,9 @@ export function registerPlaceTwapOrder(
       const perOrderSigned = isLong ? perOrderAmount : perOrderAmount.negated();
       const totalAmountX18 = perOrderSigned.times(numOrders);
 
-      const orderPrice = isLong ? BigDecimals.MAX_I128.toFixed() : '0';
+      const orderPrice = isLong
+        ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed()
+        : '0';
 
       const expiration = calculateTwapExpiration(numOrders, intervalSeconds);
 

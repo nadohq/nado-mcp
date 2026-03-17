@@ -7,9 +7,10 @@ import { z } from 'zod';
 import type { NadoContext } from '../../context';
 import { handleToolRequest } from '../../utils/handleToolRequest';
 import { getMarkets } from '../../utils/resolveMarket';
+import { resolveSubaccount } from '../../utils/resolveSubaccount';
 import {
-  SubaccountNameSchema,
-  SubaccountOwnerSchema,
+  OptionalSubaccountNameSchema,
+  OptionalSubaccountOwnerSchema,
 } from '../../utils/schemas';
 
 const PAGE_SIZE = 500;
@@ -198,8 +199,8 @@ export function registerGetAccountStats(
       description:
         'Get pre-computed trading statistics for a subaccount over a time period: total volume, trade count, fees paid, realized PnL, per-market breakdown, daily breakdown, and maker/taker split. This is the fastest way to answer questions about trading history, 30-day volume, PnL, or performance. Handles all pagination internally.',
       inputSchema: {
-        subaccountOwner: SubaccountOwnerSchema,
-        subaccountName: SubaccountNameSchema,
+        subaccountOwner: OptionalSubaccountOwnerSchema,
+        subaccountName: OptionalSubaccountNameSchema,
         days: z
           .number()
           .int()
@@ -215,23 +216,20 @@ export function registerGetAccountStats(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({
-      subaccountOwner,
-      subaccountName,
-      days,
-      productIds,
-    }: {
-      subaccountOwner: string;
-      subaccountName: string;
+    async (input: {
+      subaccountOwner?: string;
+      subaccountName?: string;
       days: number;
       productIds?: number[];
-    }) =>
-      handleToolRequest(
+    }) => {
+      const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
+
+      return handleToolRequest(
         'get_account_stats',
         `Failed to fetch account stats for ${subaccountOwner}/${subaccountName}.`,
         async () => {
           const minTimestamp =
-            Math.floor(Date.now() / 1000) - days * TimeInSeconds.DAY;
+            Math.floor(Date.now() / 1000) - input.days * TimeInSeconds.DAY;
 
           const [events, markets] = await Promise.all([
             fetchAllEvents(
@@ -239,7 +237,7 @@ export function registerGetAccountStats(
               subaccountOwner,
               subaccountName,
               minTimestamp,
-              productIds,
+              input.productIds,
             ),
             getMarkets(ctx.dataEnv, ctx.chainEnv).catch(() => []),
           ]);
@@ -248,8 +246,9 @@ export function registerGetAccountStats(
             markets.map((m) => [m.productId, m.symbol]),
           );
 
-          return computeStats(events, days, symbolMap);
+          return computeStats(events, input.days, symbolMap);
         },
-      ),
+      );
+    },
   );
 }
