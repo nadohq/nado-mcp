@@ -1,5 +1,4 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 import {
   addDecimals,
   type BalanceWithProduct,
@@ -10,18 +9,21 @@ import {
 } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
+import type { NadoContext } from '../../context';
+import { ToolExecutionError } from '../../utils/errors';
+import { toJsonContent } from '../../utils/formatting';
+import { resolveSubaccount } from '../../utils/resolveSubaccount';
 import {
+  type BalanceSide,
   BalanceSideSchema,
+  OptionalSubaccountNameSchema,
+  OptionalSubaccountOwnerSchema,
   ProductIdSchema,
-  SubaccountNameSchema,
-  SubaccountOwnerSchema,
-} from '../../utils/schemas.js';
+} from '../../utils/schemas';
 
 interface LiquidationPriceResult {
   productId: number;
-  side: 'long' | 'short';
+  side: BalanceSide;
   amount: string;
   oraclePrice: string;
   liquidationPrice: string | null;
@@ -68,7 +70,7 @@ function computeLiquidationPrices(
 
 export function registerGetLiquidationPrice(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'get_liquidation_price',
@@ -77,8 +79,8 @@ export function registerGetLiquidationPrice(
       description:
         "Estimate liquidation prices for a subaccount's perp positions, optionally after simulating a hypothetical order. If order parameters (productId, side, amount, price) are provided, the engine simulates the order first and returns post-order liquidation prices. If omitted, returns liquidation prices for the current state. Uses maintenance health to determine the oracle price at which the account would be liquidated, per perp position.",
       inputSchema: {
-        subaccountOwner: SubaccountOwnerSchema,
-        subaccountName: SubaccountNameSchema,
+        subaccountOwner: OptionalSubaccountOwnerSchema,
+        subaccountName: OptionalSubaccountNameSchema,
         productId: ProductIdSchema.optional().describe(
           'Product ID for the hypothetical order. Required if simulating an order.',
         ),
@@ -102,21 +104,17 @@ export function registerGetLiquidationPrice(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({
-      subaccountOwner,
-      subaccountName,
-      productId,
-      side,
-      amount,
-      price,
-    }: {
-      subaccountOwner: string;
-      subaccountName: string;
+    async (input: {
+      subaccountOwner?: string;
+      subaccountName?: string;
       productId?: number;
-      side?: 'long' | 'short';
+      side?: BalanceSide;
       amount?: number;
       price?: number;
     }) => {
+      const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
+      const { productId, side, amount, price } = input;
+
       try {
         const hasOrder =
           productId != null && side != null && amount != null && price != null;
@@ -158,15 +156,14 @@ export function registerGetLiquidationPrice(
             },
           ];
 
-          summary = await client.subaccount.getEngineEstimatedSubaccountSummary(
-            {
+          summary =
+            await ctx.client.subaccount.getEngineEstimatedSubaccountSummary({
               subaccountOwner,
               subaccountName,
               txs,
-            },
-          );
+            });
         } else {
-          summary = await client.subaccount.getSubaccountSummary({
+          summary = await ctx.client.subaccount.getSubaccountSummary({
             subaccountOwner,
             subaccountName,
           });

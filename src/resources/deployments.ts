@@ -1,15 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { NADO_DEPLOYMENTS, type ChainEnv } from '@nadohq/client';
+import {
+  ALL_CHAIN_ENVS,
+  NADO_DEPLOYMENTS,
+  type ChainEnv,
+} from '@nadohq/client';
 
-import { toJsonContent } from '../utils/formatting.js';
-
-const VALID_ENVS = new Set<string>(['inkMainnet', 'inkTestnet']);
+import { toJsonContent } from '../utils/formatting';
 
 export function registerDeploymentsResource(server: McpServer): void {
   const template = new ResourceTemplate('nado://deployments/{chainEnv}', {
     list: () => ({
-      resources: [...VALID_ENVS].map((env) => ({
+      resources: ALL_CHAIN_ENVS.map((env) => ({
         uri: `nado://deployments/${env}`,
         name: `Nado Deployments (${env})`,
         description: `Contract addresses for ${env}`,
@@ -18,7 +20,7 @@ export function registerDeploymentsResource(server: McpServer): void {
     }),
     complete: {
       chainEnv: (value: string) =>
-        [...VALID_ENVS].filter((e) => e.startsWith(value)),
+        ALL_CHAIN_ENVS.filter((e) => e.startsWith(value)),
     },
   });
 
@@ -31,13 +33,13 @@ export function registerDeploymentsResource(server: McpServer): void {
       mimeType: 'application/json',
     },
     (uri, variables) => {
-      const chainEnv = String(variables.chainEnv);
-      if (!VALID_ENVS.has(chainEnv)) {
+      const chainEnv = String(variables.chainEnv) as ChainEnv;
+      const addresses = NADO_DEPLOYMENTS[chainEnv];
+      if (!addresses) {
         throw new Error(
-          `Invalid chainEnv "${chainEnv}". Must be one of: ${[...VALID_ENVS].join(', ')}`,
+          `Invalid chainEnv "${chainEnv}". Must be one of: ${ALL_CHAIN_ENVS.join(', ')}`,
         );
       }
-      const addresses = NADO_DEPLOYMENTS[chainEnv as ChainEnv];
       return {
         contents: [
           {

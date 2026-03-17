@@ -1,20 +1,11 @@
-import BigNumber from 'bignumber.js';
+import { toPrintableObject } from '@nadohq/client';
 
-/**
- * JSON.stringify replacer that converts BigNumber / BigDecimal instances to
- * human-readable fixed-point strings so LLMs can reason about numeric values.
- */
-export function bigDecimalReplacer(_key: string, value: unknown): unknown {
-  if (BigNumber.isBigNumber(value)) {
-    return value.toFixed();
-  }
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-  return value;
+/** Serialize any SDK result to LLM-friendly JSON. */
+export function toJsonContent(data: unknown): string {
+  return JSON.stringify(toPrintableObject(data), null, 2);
 }
 
-/** Convenience wrapper: serialize any SDK result to LLM-friendly JSON. */
-export function toJsonContent(data: unknown): string {
-  return JSON.stringify(data, bigDecimalReplacer, 2);
+/** Format an array of product IDs for display in messages, e.g. `[1, 2, 3]`. */
+export function fmtProductIds(productIds: number[]): string {
+  return `[${productIds.join(', ')}]`;
 }

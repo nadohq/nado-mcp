@@ -1,21 +1,23 @@
-# nado-mcp
+# @nadohq/nado-mcp
 
-MCP (Model Context Protocol) server for interacting with [Nado](https://nado.xyz). Provides AI assistants with tools to query market data, subaccount information, and historical trading data.
+[![npm version](https://img.shields.io/npm/v/@nadohq/nado-mcp)](https://www.npmjs.com/package/@nadohq/nado-mcp)
 
-## Prerequisites
+MCP (Model Context Protocol) server for interacting with [Nado](https://nado.xyz) — a decentralized derivatives exchange on the Ink blockchain. Gives AI assistants tools to query market data, manage positions, place orders, and access historical trading data.
 
-- [Node.js](https://nodejs.org/) >= 18
-- [Bun](https://bun.sh/) (package manager & runtime)
+## Installation
 
-## Quick Start
+Zero-install via bunx (recommended):
 
 ```bash
-git clone <repo-url> && cd nado-mcp
-bun install
-bun run build
+bunx @nadohq/nado-mcp
 ```
 
-That's it — the built server is at `dist/index.js`. No `.env` file is needed when you pass environment variables through your MCP client config (see below).
+Or install globally:
+
+```bash
+bun add -g @nadohq/nado-mcp
+nado-mcp
+```
 
 ## MCP Client Setup
 
@@ -27,10 +29,12 @@ Add to your `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
 {
   "mcpServers": {
     "nado": {
-      "command": "node",
-      "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
+      "command": "bunx",
+      "args": ["@nadohq/nado-mcp"],
       "env": {
-        "CHAIN_ENV": "inkMainnet"
+        "DATA_ENV": "nadoMainnet",
+        "PRIVATE_KEY": "0xLINKED_SIGNER_PRIVATE_KEY",
+        "SUBACCOUNT_OWNER": "0xMAIN_WALLET_ADDRESS"
       }
     }
   }
@@ -45,32 +49,165 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "nado": {
-      "command": "node",
-      "args": ["/absolute/path/to/nado-mcp/dist/index.js"],
+      "command": "bunx",
+      "args": ["@nadohq/nado-mcp"],
       "env": {
-        "CHAIN_ENV": "inkMainnet"
+        "DATA_ENV": "nadoMainnet",
+        "PRIVATE_KEY": "0xLINKED_SIGNER_PRIVATE_KEY",
+        "SUBACCOUNT_OWNER": "0xMAIN_WALLET_ADDRESS"
       }
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/nado-mcp` with the actual path where you cloned the repo. Set `CHAIN_ENV` to `inkTestnet` to connect to the [testnet](https://testnet.nado.xyz) instead.
+Set `DATA_ENV` to `nadoTestnet` to connect to the [testnet](https://testnet.nado.xyz) instead.
+
+## Security
+
+MCP servers run **locally on your machine** as child processes spawned by the MCP client (Cursor, Claude Desktop, etc.). Communication happens over stdio — there are no open ports and no network exposure. Environment variables like `PRIVATE_KEY` stay on your machine and are never sent to any AI provider; the model only sees tool definitions and tool results.
+
+That said, **never put your main wallet private key in the MCP config.** The config file is stored in plain text on disk, readable by any process running as your user. If accidentally committed to version control, the key is permanently exposed.
+
+The server supports three operating modes, from most to least secure:
+
+### 1. Read-Only Mode (No Key)
+
+Omit `PRIVATE_KEY` entirely. All query tools work (market data, account info, history), but any tool that submits a transaction will return an error.
+
+```json
+{
+  "env": {
+    "DATA_ENV": "nadoMainnet"
+  }
+}
+```
+
+### 2. Linked Signer (Recommended for Mainnet)
+
+Use a **linked signer** — a disposable hot key that is authorized to sign transactions on behalf of your main wallet. Your main wallet key never touches the MCP config.
+
+#### How It Works
+
+Nado allows any subaccount to designate a **linked signer address**. Once linked, the engine accepts EIP-712 signatures from either the subaccount owner or the linked signer for off-chain operations (placing/cancelling orders, withdrawals, transfers).
+
+#### Setup
+
+**Step 1: Generate a hot key**
+
+Any tool that creates an Ethereum keypair will work. Pick whichever you have available:
+
+**Option A — Node.js (no extra install, uses viem from this project)**
+
+```bash
+node -e "const{generatePrivateKey,privateKeyToAddress}=require('viem/accounts');const k=generatePrivateKey();console.log('Address: '+privateKeyToAddress(k)+'\nPrivate key: '+k)"
+```
+
+**Option B — OpenSSL (available on most systems)**
+
+```bash
+openssl rand -hex 32 | awk '{print "0x"$1}'
+```
+
+This gives you a private key. To derive the address, paste the key into any wallet (e.g. MetaMask import) or use Option A.
+
+**Option C — Foundry (`cast`)**
+
+If you have [Foundry](https://book.getfoundry.sh/) installed:
+
+```bash
+cast wallet new
+```
+
+Save the printed address and private key.
+
+**Step 2: Link the hot key to your subaccount**
+
+From your **main wallet**, authorize the hot key address. You can do this via:
+
+- The Nado frontend (Settings → Linked Signer)
+- The `link_signer` tool in this MCP server (requires the main key to be configured temporarily)
+- A direct contract call
+
+**Step 3: Configure the MCP server**
+
+```json
+{
+  "env": {
+    "DATA_ENV": "nadoMainnet",
+    "PRIVATE_KEY": "0xHOT_KEY_PRIVATE_KEY",
+    "SUBACCOUNT_OWNER": "0xMAIN_WALLET_ADDRESS"
+  }
+}
+```
+
+`PRIVATE_KEY` is the hot key (used for signing). `SUBACCOUNT_OWNER` is the main wallet (used to identify the subaccount for queries and order parameters).
+
+**Step 4 (if compromised): Revoke**
+
+From your main wallet, call `link_signer` with the zero address (`0x0000000000000000000000000000000000000000`). This immediately invalidates the hot key.
+
+#### What a Linked Signer Can Do
+
+- Place, cancel, and modify orders
+- Place trigger orders (stop-loss, take-profit, TWAP)
+- Withdraw collateral (off-chain signed via the engine)
+- Transfer between subaccounts
+
+#### What a Linked Signer Cannot Do
+
+- Deposit collateral (on-chain `msg.sender` must be the wallet holding the tokens)
+- Link or revoke signers (requires the subaccount owner's signature)
+- Any on-chain transaction that checks `msg.sender`
+
+#### Limitations
+
+- **No permission scoping**: a linked signer has full access to all off-chain operations, including withdrawals. The security boundary is **revocability**, not restriction. If the key leaks, act fast to revoke it.
+- **One signer per subaccount**: each subaccount can have at most one linked signer. Linking a new address replaces the previous one.
+- **Rate limits**: linked signers may have separate rate limits from the subaccount owner.
+
+### 3. Direct Key
+
+You can use your wallet key directly. Omit `SUBACCOUNT_OWNER` and the server derives it from `PRIVATE_KEY`:
+
+```json
+{
+  "env": {
+    "DATA_ENV": "nadoMainnet",
+    "PRIVATE_KEY": "0xYOUR_PRIVATE_KEY"
+  }
+}
+```
+
+Because MCP servers run locally as child processes with no network exposure, your key never leaves your machine. This is a valid option for users who prefer simplicity over the revocability that a linked signer provides.
+
+That said, the key is stored in plain text in your MCP client config, so keep these risks in mind:
+
+- Any process running as your OS user can read the config file.
+- If accidentally committed to version control, the key is permanently exposed.
+- If the key is compromised, you must move funds — there is nothing to "revoke".
+
+For mainnet with significant funds, a linked signer (Option 2) is still recommended because it limits the blast radius to a disposable key you can revoke instantly.
 
 ## Environment Variables
 
-You can pass these as `env` in the MCP client config above, or create a `.env` file (copy from `.env.example`):
+Set these in the `"env"` block of your MCP client config (recommended). A `.env` file can be used as a fallback for local development.
 
-| Variable          | Required | Default       | Description                                      |
-| ----------------- | -------- | ------------- | ------------------------------------------------ |
-| `CHAIN_ENV`       | Yes      | —             | `inkMainnet` ([app.nado.xyz](https://app.nado.xyz)) or `inkTestnet` ([testnet.nado.xyz](https://testnet.nado.xyz)) |
-| `RPC_URL`         | No       | Chain default | Custom RPC URL                                   |
-| `PRIVATE_KEY`     | No       | —             | Private key for write operations (Phase 2)       |
-| `SUBACCOUNT_NAME` | No       | `default`     | Default subaccount name                          |
-
-When `PRIVATE_KEY` is not set, the server runs in **read-only mode**.
+| Variable           | Required | Default       | Description                                      |
+| ------------------ | -------- | ------------- | ------------------------------------------------ |
+| `DATA_ENV`         | Yes      | —             | `nadoMainnet` or `nadoTestnet`                   |
+| `RPC_URL`          | No       | Chain default | Custom RPC URL                                   |
+| `PRIVATE_KEY`      | No       | —             | Private key for signing (linked signer recommended) |
+| `SUBACCOUNT_OWNER` | No       | —             | Main wallet address (required when using a linked signer) |
+| `SUBACCOUNT_NAME`  | No       | `default`     | Default subaccount name                          |
 
 ## Development
+
+```bash
+git clone https://github.com/nadohq/nado-mcp.git && cd nado-mcp
+bun install
+bun run build
+```
 
 ```bash
 bun run dev        # Watch mode
@@ -79,13 +216,19 @@ bun run typecheck  # Type check
 bun run lint       # Lint and format
 ```
 
-## Architecture
+### Architecture
 
 The server follows a modular registration pattern:
 
 - **`src/tools/`** — MCP tools wrapping NadoClient query methods
 - **`src/resources/`** — Static/semi-static data exposed as MCP resources
-- **`src/prompts/`** — Reusable prompt templates for common workflows
 - **`src/utils/`** — Shared schemas, error classes, and formatting utilities
 
-Each tool/resource/prompt is registered on the McpServer instance during startup via its module's `register*` function.
+Each tool and resource is registered on the McpServer instance during startup via its module's `register*` function.
+
+## Contributing
+
+1. Fork the repo and create a feature branch
+2. Install dependencies: `bun install`
+3. Make your changes and ensure `bun run typecheck && bun run lint:check && bun run build` passes
+4. Open a pull request against `main`

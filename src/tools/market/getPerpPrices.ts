@@ -1,9 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
-import { ProductIdSchema } from '../../utils/schemas.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { ProductIdSchema } from '../../utils/schemas';
 
 export function registerGetPerpPrices(
   server: McpServer,
@@ -20,19 +19,11 @@ export function registerGetPerpPrices(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ productId }: { productId: number }) => {
-      try {
-        const prices = await client.perp.getPerpPrices({ productId });
-        return {
-          content: [{ type: 'text', text: toJsonContent(prices) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_perp_prices',
-          `Failed to fetch perp prices for product ${productId}. Ensure this is a perp product ID.`,
-          err,
-        );
-      }
-    },
+    async ({ productId }: { productId: number }) =>
+      handleToolRequest(
+        'get_perp_prices',
+        `Failed to fetch perp prices for product ${productId}. Ensure this is a perp product ID.`,
+        () => client.perp.getPerpPrices({ productId }),
+      ),
   );
 }

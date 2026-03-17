@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
-import { ProductIdsSchema } from '../../utils/schemas.js';
+import { fmtProductIds } from '../../utils/formatting';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { ProductIdsSchema } from '../../utils/schemas';
 
 export function registerGetMultiProductPerpPrices(
   server: McpServer,
@@ -22,21 +22,11 @@ export function registerGetMultiProductPerpPrices(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ productIds }: { productIds: number[] }) => {
-      try {
-        const prices = await client.perp.getMultiProductPerpPrices({
-          productIds,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(prices) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_multi_product_perp_prices',
-          `Failed to fetch perp prices for products [${productIds.join(', ')}]. Ensure these are perp product IDs.`,
-          err,
-        );
-      }
-    },
+    async ({ productIds }: { productIds: number[] }) =>
+      handleToolRequest(
+        'get_multi_product_perp_prices',
+        `Failed to fetch perp prices for products ${fmtProductIds(productIds)}. Ensure these are perp product IDs.`,
+        () => client.perp.getMultiProductPerpPrices({ productIds }),
+      ),
   );
 }

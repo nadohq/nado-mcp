@@ -2,12 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
-import {
-  CandlestickPeriodSchema,
-  ProductIdSchema,
-} from '../../utils/schemas.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { CandlestickPeriodSchema, ProductIdSchema } from '../../utils/schemas';
 
 export function registerGetCandlesticks(
   server: McpServer,
@@ -46,24 +42,17 @@ export function registerGetCandlesticks(
       period: number;
       limit: number;
       maxTimeInclusive?: number;
-    }) => {
-      try {
-        const candles = await client.market.getCandlesticks({
-          productId,
-          period,
-          limit,
-          maxTimeInclusive,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(candles) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_candlesticks',
-          `Failed to fetch candlesticks for product ${productId}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      handleToolRequest(
+        'get_candlesticks',
+        `Failed to fetch candlesticks for product ${productId}.`,
+        () =>
+          client.market.getCandlesticks({
+            productId,
+            period,
+            limit,
+            maxTimeInclusive,
+          }),
+      ),
   );
 }

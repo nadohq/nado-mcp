@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
-import { ProductIdsSchema } from '../../utils/schemas.js';
+import { fmtProductIds } from '../../utils/formatting';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { ProductIdsSchema } from '../../utils/schemas';
 
 export function registerGetOraclePrices(
   server: McpServer,
@@ -20,21 +20,11 @@ export function registerGetOraclePrices(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ productIds }: { productIds: number[] }) => {
-      try {
-        const prices = await client.context.indexerClient.getOraclePrices({
-          productIds,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(prices) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_oracle_prices',
-          `Failed to fetch oracle prices for products [${productIds.join(', ')}]. Use get_all_markets to list valid product IDs.`,
-          err,
-        );
-      }
-    },
+    async ({ productIds }: { productIds: number[] }) =>
+      handleToolRequest(
+        'get_oracle_prices',
+        `Failed to fetch oracle prices for products ${fmtProductIds(productIds)}. Use get_all_markets to list valid product IDs.`,
+        () => client.context.indexerClient.getOraclePrices({ productIds }),
+      ),
   );
 }

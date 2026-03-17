@@ -1,6 +1,6 @@
 import eslint from '@eslint/js';
-import prettierPluginRecommended from 'eslint-plugin-prettier/recommended';
 import typescriptEslint from '@typescript-eslint/eslint-plugin';
+import prettierPluginRecommended from 'eslint-plugin-prettier/recommended';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -39,12 +39,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ['eslint.config.js'],
-    rules: {
-      '@typescript-eslint/no-require-imports': 'off',
-    },
-  },
-  {
-    ignores: ['node_modules/', 'dist/'],
+    ignores: [
+      'node_modules/',
+      'dist/',
+      'tsup.config.ts',
+      '.lintstagedrc.js',
+      'eslint.config.js',
+    ],
   },
 );

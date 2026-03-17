@@ -2,9 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
-import { PaginationLimitSchema } from '../../utils/schemas.js';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { PaginationLimitSchema } from '../../utils/schemas';
 
 export function registerGetLeaderboard(
   server: McpServer,
@@ -37,23 +36,16 @@ export function registerGetLeaderboard(
       contestId: number;
       rankType: 'pnl' | 'roi';
       limit: number;
-    }) => {
-      try {
-        const leaderboard = await client.context.indexerClient.getLeaderboard({
-          contestId,
-          rankType,
-          limit,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(leaderboard) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_leaderboard',
-          `Failed to fetch leaderboard for contest ${contestId}.`,
-          err,
-        );
-      }
-    },
+    }) =>
+      handleToolRequest(
+        'get_leaderboard',
+        `Failed to fetch leaderboard for contest ${contestId}.`,
+        () =>
+          client.context.indexerClient.getLeaderboard({
+            contestId,
+            rankType,
+            limit,
+          }),
+      ),
   );
 }

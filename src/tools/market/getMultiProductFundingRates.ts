@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
-import { ProductIdsSchema } from '../../utils/schemas.js';
+import { fmtProductIds } from '../../utils/formatting';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { ProductIdsSchema } from '../../utils/schemas';
 
 export function registerGetMultiProductFundingRates(
   server: McpServer,
@@ -22,21 +22,11 @@ export function registerGetMultiProductFundingRates(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ productIds }: { productIds: number[] }) => {
-      try {
-        const rates = await client.market.getMultiProductFundingRates({
-          productIds,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(rates) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'get_multi_product_funding_rates',
-          `Failed to fetch funding rates for products [${productIds.join(', ')}]. Ensure these are perp product IDs.`,
-          err,
-        );
-      }
-    },
+    async ({ productIds }: { productIds: number[] }) =>
+      handleToolRequest(
+        'get_multi_product_funding_rates',
+        `Failed to fetch funding rates for products ${fmtProductIds(productIds)}. Ensure these are perp product IDs.`,
+        () => client.market.getMultiProductFundingRates({ productIds }),
+      ),
   );
 }

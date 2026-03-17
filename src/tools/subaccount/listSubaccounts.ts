@@ -1,14 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NadoClient } from '@nadohq/client';
 import { z } from 'zod';
 
-import { ToolExecutionError } from '../../utils/errors.js';
-import { toJsonContent } from '../../utils/formatting.js';
-import { PaginationLimitSchema } from '../../utils/schemas.js';
+import type { NadoContext } from '../../context';
+import { handleToolRequest } from '../../utils/handleToolRequest';
+import { PaginationLimitSchema } from '../../utils/schemas';
 
 export function registerListSubaccounts(
   server: McpServer,
-  client: NadoClient,
+  ctx: NadoContext,
 ): void {
   server.registerTool(
     'list_subaccounts',
@@ -29,21 +28,17 @@ export function registerListSubaccounts(
       annotations: { readOnlyHint: true },
     },
     async ({ address, limit }: { address?: string; limit: number }) => {
-      try {
-        const subaccounts = await client.context.indexerClient.listSubaccounts({
-          address,
-          limit,
-        });
-        return {
-          content: [{ type: 'text', text: toJsonContent(subaccounts) }],
-        };
-      } catch (err) {
-        throw new ToolExecutionError(
-          'list_subaccounts',
-          `Failed to list subaccounts${address ? ` for ${address}` : ''}.`,
-          err,
-        );
-      }
+      const resolvedAddress = address || ctx.subaccountOwner;
+
+      return handleToolRequest(
+        'list_subaccounts',
+        `Failed to list subaccounts${resolvedAddress ? ` for ${resolvedAddress}` : ''}.`,
+        () =>
+          ctx.client.context.indexerClient.listSubaccounts({
+            address: resolvedAddress,
+            limit,
+          }),
+      );
     },
   );
 }

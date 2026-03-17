@@ -1,34 +1,44 @@
-/** Supported chain environments for Nado. */
-export type ChainEnv = 'inkMainnet' | 'inkTestnet';
+import { ALL_DATA_ENVS, type DataEnv, getDataEnvConfig } from './dataEnv';
 
-/** Server configuration parsed from environment variables. */
+import type { ChainEnv } from '@nadohq/client';
+
+/**
+ * Server configuration parsed from environment variables.
+ * Variables are typically set via the MCP client config (e.g. .cursor/mcp.json "env" block).
+ */
 export interface ServerConfig {
+  dataEnv: DataEnv;
   chainEnv: ChainEnv;
   rpcUrl?: string;
   privateKey?: string;
+  /** When using a linked signer, this is the main wallet that owns the subaccount. */
+  subaccountOwner?: string;
   subaccountName: string;
 }
 
-const VALID_CHAIN_ENVS = new Set<string>(['inkMainnet', 'inkTestnet']);
-
 /**
- * Loads server configuration from environment variables.
- * @returns Parsed and validated server configuration.
- * @throws {Error} When CHAIN_ENV is missing or invalid.
+ * Loads server configuration from environment variables supplied by the MCP client.
+ *
+ * `DATA_ENV` is required (`nadoTestnet` | `nadoMainnet`).
+ * The chain environment is derived automatically from the data env.
  */
 export function loadConfig(): ServerConfig {
-  const chainEnv = process.env.CHAIN_ENV;
+  const rawDataEnv = process.env.DATA_ENV as DataEnv | undefined;
 
-  if (!chainEnv || !VALID_CHAIN_ENVS.has(chainEnv)) {
+  if (!rawDataEnv || !ALL_DATA_ENVS.includes(rawDataEnv)) {
     throw new Error(
-      `CHAIN_ENV must be one of: ${[...VALID_CHAIN_ENVS].join(', ')}. Got: ${chainEnv ?? '(not set)'}`,
+      `DATA_ENV is required and must be one of: ${ALL_DATA_ENVS.join(', ')}.${rawDataEnv ? ` Got: ${rawDataEnv}` : ''}`,
     );
   }
 
+  const envConfig = getDataEnvConfig(rawDataEnv);
+
   return {
-    chainEnv: chainEnv as ChainEnv,
-    rpcUrl: process.env.RPC_URL || undefined,
-    privateKey: process.env.PRIVATE_KEY || undefined,
-    subaccountName: process.env.SUBACCOUNT_NAME || 'default',
+    dataEnv: rawDataEnv,
+    chainEnv: envConfig.defaultChainEnv,
+    rpcUrl: process.env.RPC_URL,
+    privateKey: process.env.PRIVATE_KEY,
+    subaccountOwner: process.env.SUBACCOUNT_OWNER,
+    subaccountName: process.env.SUBACCOUNT_NAME ?? 'default',
   };
 }

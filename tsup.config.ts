@@ -11,4 +11,7 @@ export default defineConfig({
   banner: {
     js: '#!/usr/bin/env node',
   },
+  loader: {
+    '.md': 'text',
+  },
 });
