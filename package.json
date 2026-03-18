@@ -4,7 +4,7 @@
   "type": "module",
   "description": "MCP server for interacting with the Nado Protocol",
   "author": "Nado",
-  "license": "ISC",
+  "license": "MIT",
   "bin": {
     "nado-mcp": "./dist/index.js"
   },

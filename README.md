@@ -1,23 +1,27 @@
-# @nadohq/nado-mcp
+# nado-mcp
 
-[![npm version](https://img.shields.io/npm/v/@nadohq/nado-mcp)](https://www.npmjs.com/package/@nadohq/nado-mcp)
+![version](https://img.shields.io/npm/v/@nadohq/nado-mcp?color=blue)
 
-MCP (Model Context Protocol) server for interacting with [Nado](https://nado.xyz) — a decentralized derivatives exchange on the Ink blockchain. Gives AI assistants tools to query market data, manage positions, place orders, and access historical trading data.
+MCP server for the [Nado Protocol](https://nado.xyz) — perpetual futures, spot trading, and liquidity provision on the Ink blockchain.
+
+Gives AI assistants tools to query market data, manage positions, place orders, and access historical trading data. Works with Cursor, Claude Desktop, VS Code, Windsurf, Codex, Gemini CLI, and any MCP-compatible client.
+
+> [!CAUTION]
+> Experimental software. Interacts with the live Nado Protocol on the Ink blockchain and can execute real financial transactions including leveraged perpetual futures. Read [DISCLAIMER.md](DISCLAIMER.md) before using with real funds or AI agents.
+
+## Contents
+
+- [Installation](#installation)
+- [MCP Client Setup](#mcp-client-setup)
+- [Security](#security)
+- [Environment Variables](#environment-variables)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Disclaimer](#disclaimer)
 
 ## Installation
 
-Zero-install via bunx (recommended):
-
-```bash
-bunx @nadohq/nado-mcp
-```
-
-Or install globally:
-
-```bash
-bun add -g @nadohq/nado-mcp
-nado-mcp
-```
+No manual install needed. MCP clients like Cursor and Claude Desktop resolve the package automatically when configured with `bunx` (see [MCP Client Setup](#mcp-client-setup)).
 
 ## MCP Client Setup
 
@@ -65,7 +69,7 @@ Set `DATA_ENV` to `nadoTestnet` to connect to the [testnet](https://testnet.nado
 
 ## Security
 
-MCP servers run **locally on your machine** as child processes spawned by the MCP client (Cursor, Claude Desktop, etc.). Communication happens over stdio — there are no open ports and no network exposure. Environment variables like `PRIVATE_KEY` stay on your machine and are never sent to any AI provider; the model only sees tool definitions and tool results.
+MCP servers run **locally on your machine** as child processes spawned by the MCP client (Cursor, Claude Desktop, etc.). Communication happens over stdio - there are no open ports and no network exposure. Environment variables like `PRIVATE_KEY` stay on your machine and are never sent to any AI provider; the model only sees tool definitions and tool results.
 
 That said, **never put your main wallet private key in the MCP config.** The config file is stored in plain text on disk, readable by any process running as your user. If accidentally committed to version control, the key is permanently exposed.
 
@@ -97,13 +101,13 @@ Nado allows any subaccount to designate a **linked signer address**. Once linked
 
 Any tool that creates an Ethereum keypair will work. Pick whichever you have available:
 
-**Option A — Node.js (no extra install, uses viem from this project)**
+**Option A - Node.js (no extra install, uses viem from this project)**
 
 ```bash
 node -e "const{generatePrivateKey,privateKeyToAddress}=require('viem/accounts');const k=generatePrivateKey();console.log('Address: '+privateKeyToAddress(k)+'\nPrivate key: '+k)"
 ```
 
-**Option B — OpenSSL (available on most systems)**
+**Option B - OpenSSL (available on most systems)**
 
 ```bash
 openssl rand -hex 32 | awk '{print "0x"$1}'
@@ -111,7 +115,7 @@ openssl rand -hex 32 | awk '{print "0x"$1}'
 
 This gives you a private key. To derive the address, paste the key into any wallet (e.g. MetaMask import) or use Option A.
 
-**Option C — Foundry (`cast`)**
+**Option C - Foundry (`cast`)**
 
 If you have [Foundry](https://book.getfoundry.sh/) installed:
 
@@ -216,19 +220,13 @@ bun run typecheck  # Type check
 bun run lint       # Lint and format
 ```
 
-### Architecture
-
-The server follows a modular registration pattern:
-
-- **`src/tools/`** — MCP tools wrapping NadoClient query methods
-- **`src/resources/`** — Static/semi-static data exposed as MCP resources
-- **`src/utils/`** — Shared schemas, error classes, and formatting utilities
-
-Each tool and resource is registered on the McpServer instance during startup via its module's `register*` function.
-
 ## Contributing
 
 1. Fork the repo and create a feature branch
 2. Install dependencies: `bun install`
 3. Make your changes and ensure `bun run typecheck && bun run lint:check && bun run build` passes
 4. Open a pull request against `main`
+
+## Disclaimer
+
+See [DISCLAIMER.md](DISCLAIMER.md).
