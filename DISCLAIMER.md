@@ -28,7 +28,7 @@ If you grant an AI agent or other MCP client access to your wallet or credential
 
 - You are responsible for all actions the client takes on your behalf.
 - The client can initiate swaps, provide or remove liquidity, approve token spending, and execute other on-chain transactions as permitted by the granted access.
-- Use the [INSERT] field in the tool catalog to identify high-risk operations.
+- Use the [Dangerous] field in the tool catalog to identify high-risk operations.
 - Restrict wallet permissions and token approvals to the minimum necessary for your use case.
 - Monitor agent sessions actively; do not leave agents unattended with broad transaction authority.
 
