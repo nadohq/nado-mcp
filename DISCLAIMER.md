@@ -53,7 +53,7 @@ This software is provided without any guarantee of uptime, accuracy, or fitness 
 
 ## Support and Responsible Disclosure
 
-This tool is open-sourced under the MIT license by Spira Arc Inc. (Nado). Bug reports and feature requests are handled through [GitHub Issues](https://github.com/nadohq/nado-mcp/issues). For security vulnerabilities, please follow responsible disclosure practices and contact the team directly before filing a public issue at [email].
+This tool is open-sourced under the MIT license by Spira Arc Inc. (Nado). For security vulnerabilities, please follow responsible disclosure practices and contact the team directly before filing a public issue, by contacting us through [Zendesk](https://nado-90114.zendesk.com/hc/en-us/requests/new?ticket_form_id=52275013155481). You can also make bug reports and feature requests through Zendesk.
 
 ## Credential and Wallet Security
 
