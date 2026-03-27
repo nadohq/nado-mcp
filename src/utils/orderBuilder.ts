@@ -1,13 +1,9 @@
-import type {
-  BigDecimalish,
-  NadoClient,
-  OrderExecutionType,
-} from '@nadohq/client';
+import type { NadoClient, OrderExecutionType } from '@nadohq/client';
 import {
   addDecimals,
   getOrderNonce,
   packOrderAppendix,
-  toBigDecimal,
+  toBigNumber,
 } from '@nadohq/client';
 import BigNumber from 'bignumber.js';
 
@@ -39,9 +35,9 @@ export function roundToIncrement(
 export interface BuiltOrderParams {
   productId: number;
   order: {
-    price: BigDecimalish;
-    amount: BigDecimalish;
-    expiration: BigDecimalish;
+    price: string;
+    amount: string;
+    expiration: number;
     nonce: string;
     appendix: bigint;
   };
@@ -95,7 +91,7 @@ function resolveAmount(
 ): ResolvedAmount {
   const isLong = amount > 0;
   const absAmountX18 = roundToIncrement(
-    addDecimals(toBigDecimal(Math.abs(amount))),
+    addDecimals(toBigNumber(Math.abs(amount))),
     sizeIncrement,
   );
   const signedAmountX18 = isLong ? absAmountX18 : absAmountX18.negated();
@@ -120,7 +116,7 @@ async function resolvePrice({
   price,
 }: ResolvePriceInput): Promise<string> {
   if (price != null) {
-    return roundToIncrement(toBigDecimal(price), priceIncrement).toFixed();
+    return roundToIncrement(toBigNumber(price), priceIncrement).toFixed();
   }
 
   const marketPrice = await client.market.getLatestMarketPrice({ productId });
@@ -157,7 +153,7 @@ function computeIsolatedMargin(
   leverage: number,
 ): BigNumber {
   return addDecimals(
-    toBigDecimal(Math.abs(amount)).times(resolvedPrice).dividedBy(leverage),
+    toBigNumber(Math.abs(amount)).times(resolvedPrice).dividedBy(leverage),
   );
 }
 
@@ -213,7 +209,7 @@ export async function buildEngineOrder(
     price,
   });
 
-  let isolated: { margin: BigDecimalish } | undefined;
+  let isolated: { margin: BigNumber | number } | undefined;
   if (marginMode === 'isolated') {
     if (reduceOnly) {
       isolated = { margin: 0 };
@@ -351,7 +347,7 @@ export async function buildPriceTriggerOrder(
     price,
   });
 
-  let isolated: { margin: BigDecimalish } | undefined;
+  let isolated: { margin: BigNumber | number } | undefined;
   if (marginMode === 'isolated') {
     if (reduceOnly) {
       isolated = { margin: 0 };

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
-import { TimeInSeconds, removeDecimals, toBigDecimal } from '@nadohq/client';
+import { TimeInSeconds, removeDecimals, toBigNumber } from '@nadohq/client';
 import type { IndexerMatchEvent } from '@nadohq/indexer-client';
 import { z } from 'zod';
 
@@ -107,11 +107,11 @@ function computeStats(
     if (ts < cutoff) continue;
 
     const quoteFilled = removeDecimals(
-      toBigDecimal(event.quoteFilled).abs(),
+      toBigNumber(event.quoteFilled).abs(),
     ).toNumber();
-    const fee = removeDecimals(toBigDecimal(event.totalFee)).toNumber();
+    const fee = removeDecimals(toBigNumber(event.totalFee)).toNumber();
     const quote = quoteFilled - Math.abs(fee);
-    const pnl = removeDecimals(toBigDecimal(event.realizedPnl ?? 0)).toNumber();
+    const pnl = removeDecimals(toBigNumber(event.realizedPnl ?? 0)).toNumber();
     const isTaker = event.isTaker ?? true;
     const pid = event.productId;
 

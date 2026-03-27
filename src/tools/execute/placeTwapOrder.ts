@@ -3,7 +3,7 @@ import {
   addDecimals,
   packOrderAppendix,
   removeDecimals,
-  toBigDecimal,
+  toBigNumber,
 } from '@nadohq/client';
 import { z } from 'zod';
 
@@ -118,7 +118,7 @@ export function registerPlaceTwapOrder(
       }
 
       const perOrderAmount = roundToIncrement(
-        toBigDecimal(addDecimals(amount / numOrders)),
+        toBigNumber(addDecimals(amount / numOrders)),
         sizeIncrement,
       );
 

@@ -5,7 +5,7 @@ import {
   type HealthStatusByType,
   ProductEngineType,
   type SubaccountTx,
-  toBigDecimal,
+  toBigNumber,
 } from '@nadohq/client';
 import { z } from 'zod';
 
@@ -150,8 +150,8 @@ export function registerGetLiquidationPrice(
               type: 'apply_delta',
               tx: {
                 productId,
-                amountDelta: toBigDecimal(amountDelta),
-                vQuoteDelta: toBigDecimal(vQuoteDelta),
+                amountDelta: toBigNumber(amountDelta),
+                vQuoteDelta: toBigNumber(vQuoteDelta),
               },
             },
           ];

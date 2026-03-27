@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { toBigDecimal } from '@nadohq/client';
+import { toBigNumber } from '@nadohq/client';
+import type BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -45,13 +46,13 @@ export function registerGetMaxOrderSize(
         'get_max_order_size',
         `Failed to calculate max order size for product ${input.productId}.`,
         async () => {
-          const maxSize = await ctx.client.market.getMaxOrderSize({
+          const maxSize = (await ctx.client.market.getMaxOrderSize({
             subaccountOwner,
             subaccountName,
             productId: input.productId,
-            price: toBigDecimal(input.price),
+            price: toBigNumber(input.price),
             side: input.side,
-          });
+          })) as BigNumber;
           return { maxOrderSize: maxSize };
         },
       );

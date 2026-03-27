@@ -132,6 +132,16 @@ Correct behavior:
 
 1. `get_account_stats` -- 30-day (or custom period) pre-computed stats: volume, trade count, fees, PnL, per-market breakdown, daily breakdown, maker/taker split. This is the single fastest tool for answering questions about trading history and performance.
 
+### Place a limit order with TP/SL
+
+When placing a resting limit order with take-profit and/or stop-loss, use the `orderDigest` parameter on `place_trigger_order` to link the trigger orders to the resting order. This causes the TP/SL to wait in `waiting_dependency` status until the resting order fills before activating.
+
+1. `place_order` -- place the resting limit order. The response contains a `digest` for each order placed.
+2. `place_trigger_order` with `orderDigest` set to the digest from step 1 -- place the take-profit trigger. Set `triggerOnPartialFill` to `true` if the TP should activate on partial fills.
+3. `place_trigger_order` with `orderDigest` set to the same digest -- place the stop-loss trigger.
+
+The trigger orders will remain in `waiting_dependency` status (visible via `get_trigger_orders`) until the resting order fills, then transition to `waiting_price` to monitor the trigger condition.
+
 ### Screen for opportunities
 
 1. `get_tickers` -- all market 24h data

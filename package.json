@@ -50,7 +50,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@nadohq/client": "^0.1.0-alpha.51",
+    "@nadohq/client": "^0.6.0",
     "viem": "^2.47.0",
     "zod": "^4.3.6"
   },
