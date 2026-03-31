@@ -1,10 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   addDecimals,
+  getOrderNonce,
   packOrderAppendix,
   removeDecimals,
   toBigNumber,
 } from '@nadohq/client';
+import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -110,30 +112,43 @@ export function registerPlaceTwapOrder(
       const marketPrice = await ctx.client.market.getLatestMarketPrice({
         productId,
       });
-      const refPrice = isLong ? marketPrice.ask : marketPrice.bid;
+      const refPrice = isLong ? marketPrice.bid : marketPrice.ask;
       if (refPrice.lte(0)) {
         throw new Error(
-          `No ${isLong ? 'ask' : 'bid'} price available for product ${productId}.`,
+          `No ${isLong ? 'bid' : 'ask'} price available for product ${productId}.`,
         );
       }
 
-      const perOrderAmount = roundToIncrement(
-        toBigNumber(addDecimals(amount / numOrders)),
+      const perOrderHuman = toBigNumber(amount).dividedBy(numOrders);
+      const perOrderAmountX18 = roundToIncrement(
+        addDecimals(perOrderHuman),
         sizeIncrement,
+        BigNumber.ROUND_DOWN,
       );
 
-      const perOrderSigned = isLong ? perOrderAmount : perOrderAmount.negated();
+      const perOrderSigned = isLong
+        ? perOrderAmountX18
+        : perOrderAmountX18.negated();
+
+      const perOrderAmounts: BigNumber[] = Array.from(
+        { length: numOrders },
+        () => perOrderSigned,
+      );
+
       const totalAmountX18 = perOrderSigned.times(numOrders);
 
       const orderPrice = isLong
-        ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed()
+        ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed(
+            18,
+            BigNumber.ROUND_DOWN,
+          )
         : '0';
 
       const expiration = calculateTwapExpiration(numOrders, intervalSeconds);
 
       const appendix = packOrderAppendix({
         orderExecutionType: 'ioc',
-        triggerType: 'twap',
+        triggerType: 'twap_custom_amounts',
         reduceOnly,
         twap: {
           numOrders,
@@ -145,8 +160,9 @@ export function registerPlaceTwapOrder(
         subaccountOwner: ctx.subaccountOwner,
         subaccountName: ctx.subaccountName,
         price: orderPrice,
-        amount: totalAmountX18.toFixed(0),
+        amount: totalAmountX18.toFixed(0, BigNumber.ROUND_DOWN),
         expiration,
+        nonce: getOrderNonce(),
         appendix,
       };
 
@@ -163,6 +179,7 @@ export function registerPlaceTwapOrder(
                   type: 'time' as const,
                   criteria: {
                     interval: intervalSeconds,
+                    amounts: perOrderAmounts,
                   },
                 },
               },
@@ -175,7 +192,7 @@ export function registerPlaceTwapOrder(
               side,
               productId,
               totalAmount: amount,
-              perOrderAmount: removeDecimals(perOrderAmount).toFixed(),
+              perOrderAmount: removeDecimals(perOrderAmountX18).toFixed(),
               numOrders,
               intervalSeconds,
               totalDuration: `${durationMinutes} minutes`,

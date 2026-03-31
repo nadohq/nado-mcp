@@ -8,8 +8,8 @@ import { handleToolRequest } from '../../utils/handleToolRequest';
 import {
   DEFAULT_SLIPPAGE_PCT,
   buildPriceTriggerOrder,
-  resolveMarketIncrements,
-  roundToIncrement,
+  resolveMarketData,
+  toMutationPriceString,
 } from '../../utils/orderBuilder';
 import { requireSigner } from '../../utils/requireSigner';
 import {
@@ -145,14 +145,11 @@ export function registerPlaceTriggerOrder(
     }) => {
       requireSigner('place_trigger_order', ctx);
 
-      const { priceIncrement } = await resolveMarketIncrements(
-        ctx.client,
-        productId,
-      );
-      const roundedTriggerPrice = roundToIncrement(
+      const { priceIncrement } = await resolveMarketData(ctx.client, productId);
+      const roundedTriggerPrice = toMutationPriceString(
         toBigNumber(triggerPrice),
         priceIncrement,
-      ).toNumber();
+      );
 
       const orderParams = await buildPriceTriggerOrder({
         client: ctx.client,

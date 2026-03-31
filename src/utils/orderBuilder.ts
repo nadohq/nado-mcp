@@ -1,35 +1,60 @@
 import type { NadoClient, OrderExecutionType } from '@nadohq/client';
 import {
+  BigNumbers,
   addDecimals,
   getOrderNonce,
   packOrderAppendix,
+  removeDecimals,
   toBigNumber,
 } from '@nadohq/client';
 import BigNumber from 'bignumber.js';
 
 export const DEFAULT_SLIPPAGE_PCT = 2;
 
-const DEFAULT_ORDER_LIFETIME_SECONDS = 1000;
+const NADO_PRODUCT_DECIMALS = 18;
 
 /**
- * Engine order expiration in seconds from now.
- * The engine interprets this field as a unix timestamp in seconds.
+ * The SDK returns `removeDecimals(MAX_I128)` as the ask price when the
+ * book's ask side is empty. The trade app treats this as "no ask available"
+ * via its `safeAsk` helper; we replicate that guard here.
  */
-function getExpiration(
-  secondsInFuture = DEFAULT_ORDER_LIFETIME_SECONDS,
-): number {
-  return Math.floor(Date.now() / 1000) + secondsInFuture;
+const MAX_EMPTY_ASK_PRICE = removeDecimals(BigNumbers.MAX_I128) as BigNumber;
+
+/**
+ * Returns an effectively-infinite expiration for engine orders.
+ *
+ * The engine interprets this field as a unix timestamp **in seconds**.
+ * The trade app passes `Date.now()` (milliseconds) which, when read as
+ * seconds, lands around year 58 000 — i.e. the order never expires.
+ * We replicate that convention here.
+ */
+function getEngineOrderExpiration(): number {
+  return Date.now();
 }
 
 export function roundToIncrement(
   value: BigNumber,
   increment: BigNumber,
+  roundingMode?: BigNumber.RoundingMode,
 ): BigNumber {
   if (increment.isZero()) return value;
-  return value
-    .dividedBy(increment)
-    .integerValue(BigNumber.ROUND_DOWN)
-    .times(increment);
+  return value.dividedBy(increment).integerValue(roundingMode).times(increment);
+}
+
+export function toMutationPriceString(
+  price: BigNumber,
+  priceIncrement: BigNumber,
+): string {
+  const rounded = roundToIncrement(price, priceIncrement);
+  return rounded.toFixed(NADO_PRODUCT_DECIMALS, BigNumber.ROUND_DOWN);
+}
+
+function toMutationAmountString(
+  amount: BigNumber,
+  sizeIncrement: BigNumber,
+): string {
+  const rounded = roundToIncrement(amount, sizeIncrement, BigNumber.ROUND_DOWN);
+  return rounded.toFixed(0, BigNumber.ROUND_DOWN);
 }
 
 export interface BuiltOrderParams {
@@ -47,9 +72,11 @@ export interface BuiltOrderParams {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-export interface MarketIncrements {
+export interface MarketData {
   priceIncrement: BigNumber;
   sizeIncrement: BigNumber;
+  maxLeverage: number;
+  oraclePrice: BigNumber;
 }
 
 let allMarketsCache:
@@ -61,10 +88,10 @@ export function _resetMarketDataCache(): void {
   allMarketsCache = undefined;
 }
 
-export async function resolveMarketIncrements(
+export async function resolveMarketData(
   client: NadoClient,
   productId: number,
-): Promise<MarketIncrements> {
+): Promise<MarketData> {
   if (!allMarketsCache) {
     allMarketsCache = await client.market.getAllMarkets();
   }
@@ -74,9 +101,14 @@ export async function resolveMarketIncrements(
       `Unknown product ${productId}. Use get_all_markets to find valid product IDs.`,
     );
   }
+  const maxLeverage = Math.round(
+    1 / (1 - market.product.longWeightInitial.toNumber()),
+  );
   return {
     priceIncrement: market.priceIncrement,
     sizeIncrement: market.sizeIncrement,
+    maxLeverage,
+    oraclePrice: market.product.oraclePrice,
   };
 }
 
@@ -93,6 +125,7 @@ function resolveAmount(
   const absAmountX18 = roundToIncrement(
     addDecimals(toBigNumber(Math.abs(amount))),
     sizeIncrement,
+    BigNumber.ROUND_DOWN,
   );
   const signedAmountX18 = isLong ? absAmountX18 : absAmountX18.negated();
   return { absAmountX18, signedAmountX18 };
@@ -107,6 +140,12 @@ interface ResolvePriceInput {
   price?: number;
 }
 
+/**
+ * Resolves the limit price for an order. When no explicit price is given
+ * (market order), applies slippage to the top-of-book price on the **same
+ * side** so that the bid-ask spread is included in the slippage budget,
+ * matching the trade-app behaviour.
+ */
 async function resolvePrice({
   client,
   productId,
@@ -116,45 +155,79 @@ async function resolvePrice({
   price,
 }: ResolvePriceInput): Promise<string> {
   if (price != null) {
-    return roundToIncrement(toBigNumber(price), priceIncrement).toFixed();
+    return toMutationPriceString(toBigNumber(price), priceIncrement);
   }
 
   const marketPrice = await client.market.getLatestMarketPrice({ productId });
   const slippageFrac = slippagePct / 100;
 
   if (isLong) {
-    const askPrice = marketPrice.ask;
-    if (askPrice.lte(0)) {
+    const bidPrice = marketPrice.bid;
+    if (bidPrice.lte(0)) {
       throw new Error(
-        `No ask price available for product ${productId}. Cannot place market buy order.`,
+        `No bid price available for product ${productId}. Cannot place market buy order.`,
       );
     }
-    return roundToIncrement(
-      askPrice.times(1 + slippageFrac),
+    return toMutationPriceString(
+      bidPrice.times(1 + slippageFrac),
       priceIncrement,
-    ).toFixed();
-  }
-
-  const bidPrice = marketPrice.bid;
-  if (bidPrice.lte(0)) {
-    throw new Error(
-      `No bid price available for product ${productId}. Cannot place market sell order.`,
     );
   }
-  return roundToIncrement(
-    bidPrice.times(1 - slippageFrac),
+
+  const askPrice = marketPrice.ask;
+  if (askPrice.lte(0) || askPrice.gte(MAX_EMPTY_ASK_PRICE)) {
+    throw new Error(
+      `No ask price available for product ${productId}. Cannot place market sell order.`,
+    );
+  }
+  return toMutationPriceString(
+    askPrice.times(1 - slippageFrac),
     priceIncrement,
-  ).toFixed();
+  );
 }
 
-function computeIsolatedMargin(
-  amount: number,
-  resolvedPrice: string,
-  leverage: number,
-): BigNumber {
-  return addDecimals(
-    toBigNumber(Math.abs(amount)).times(resolvedPrice).dividedBy(leverage),
-  );
+interface ComputeIsolatedMarginInput {
+  signedAmountX18: BigNumber;
+  orderPrice: string;
+  leverage: number;
+  maxLeverage: number;
+  oraclePrice: BigNumber;
+  isMarketOrder: boolean;
+}
+
+/**
+ * Calculates the required margin for an isolated-margin order, matching
+ * the trade app's `calcIsoOrderRequiredMargin`.
+ */
+function computeIsolatedMargin({
+  signedAmountX18,
+  orderPrice,
+  leverage: userLeverage,
+  maxLeverage,
+  oraclePrice,
+  isMarketOrder,
+}: ComputeIsolatedMarginInput): BigNumber {
+  const leverage = Math.min(userLeverage, maxLeverage - 0.2);
+
+  const marginWithoutInitialPnl = signedAmountX18
+    .multipliedBy(orderPrice)
+    .dividedBy(leverage)
+    .abs();
+
+  if (!isMarketOrder) {
+    return marginWithoutInitialPnl;
+  }
+
+  const weight = signedAmountX18.isPositive()
+    ? 1 - 1 / leverage
+    : 1 + 1 / leverage;
+
+  const takerMarginAdjustment = signedAmountX18
+    .negated()
+    .multipliedBy(oraclePrice.minus(orderPrice))
+    .multipliedBy(weight);
+
+  return marginWithoutInitialPnl.plus(BigNumber.max(takerMarginAdjustment, 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -195,10 +268,8 @@ export async function buildEngineOrder(
   } = input;
 
   const isLong = amount > 0;
-  const { priceIncrement, sizeIncrement } = await resolveMarketIncrements(
-    client,
-    productId,
-  );
+  const marketData = await resolveMarketData(client, productId);
+  const { priceIncrement, sizeIncrement } = marketData;
   const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
   const resolvedPrice = await resolvePrice({
     client,
@@ -209,7 +280,7 @@ export async function buildEngineOrder(
     price,
   });
 
-  let isolated: { margin: BigNumber | number } | undefined;
+  let isolated: { margin: string | number } | undefined;
   if (marginMode === 'isolated') {
     if (reduceOnly) {
       isolated = { margin: 0 };
@@ -218,7 +289,14 @@ export async function buildEngineOrder(
         throw new Error('leverage is required when marginMode is "isolated".');
       }
       isolated = {
-        margin: computeIsolatedMargin(amount, resolvedPrice, leverage),
+        margin: computeIsolatedMargin({
+          signedAmountX18,
+          orderPrice: resolvedPrice,
+          leverage,
+          maxLeverage: marketData.maxLeverage,
+          oraclePrice: marketData.oraclePrice,
+          isMarketOrder: price == null,
+        }).toFixed(0, BigNumber.ROUND_DOWN),
       };
     }
   }
@@ -233,8 +311,8 @@ export async function buildEngineOrder(
     productId,
     order: {
       price: resolvedPrice,
-      amount: signedAmountX18.toFixed(0),
-      expiration: getExpiration(),
+      amount: toMutationAmountString(signedAmountX18, sizeIncrement),
+      expiration: getEngineOrderExpiration(),
       nonce: getOrderNonce(),
       appendix,
     },
@@ -267,7 +345,7 @@ export async function buildCloseOrder(
   } = input;
 
   const isLong = amount > 0;
-  const { priceIncrement, sizeIncrement } = await resolveMarketIncrements(
+  const { priceIncrement, sizeIncrement } = await resolveMarketData(
     client,
     productId,
   );
@@ -291,8 +369,8 @@ export async function buildCloseOrder(
     productId,
     order: {
       price: resolvedPrice,
-      amount: signedAmountX18.toFixed(0),
-      expiration: getExpiration(),
+      amount: toMutationAmountString(signedAmountX18, sizeIncrement),
+      expiration: getEngineOrderExpiration(),
       nonce: getOrderNonce(),
       appendix,
     },
@@ -333,10 +411,8 @@ export async function buildPriceTriggerOrder(
   } = input;
 
   const isLong = amount > 0;
-  const { priceIncrement, sizeIncrement } = await resolveMarketIncrements(
-    client,
-    productId,
-  );
+  const marketData = await resolveMarketData(client, productId);
+  const { priceIncrement, sizeIncrement } = marketData;
   const { signedAmountX18 } = resolveAmount(amount, sizeIncrement);
   const resolvedPrice = await resolvePrice({
     client,
@@ -347,7 +423,7 @@ export async function buildPriceTriggerOrder(
     price,
   });
 
-  let isolated: { margin: BigNumber | number } | undefined;
+  let isolated: { margin: string | number } | undefined;
   if (marginMode === 'isolated') {
     if (reduceOnly) {
       isolated = { margin: 0 };
@@ -356,7 +432,14 @@ export async function buildPriceTriggerOrder(
         throw new Error('leverage is required when marginMode is "isolated".');
       }
       isolated = {
-        margin: computeIsolatedMargin(amount, resolvedPrice, leverage),
+        margin: computeIsolatedMargin({
+          signedAmountX18,
+          orderPrice: resolvedPrice,
+          leverage,
+          maxLeverage: marketData.maxLeverage,
+          oraclePrice: marketData.oraclePrice,
+          isMarketOrder: price == null,
+        }).toFixed(0, BigNumber.ROUND_DOWN),
       };
     }
   }
@@ -374,7 +457,7 @@ export async function buildPriceTriggerOrder(
     productId,
     order: {
       price: resolvedPrice,
-      amount: signedAmountX18.toFixed(0),
+      amount: toMutationAmountString(signedAmountX18, sizeIncrement),
       expiration: getTriggerOrderExpiration(),
       nonce: getOrderNonce(),
       appendix,

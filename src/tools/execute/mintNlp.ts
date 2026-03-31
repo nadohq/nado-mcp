@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { addDecimals } from '@nadohq/client';
+import { addDecimals, toBigNumber } from '@nadohq/client';
+import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -49,7 +50,9 @@ export function registerMintNlp(server: McpServer, ctx: NadoContext): void {
           ctx.client.spot.mintNlp({
             subaccountOwner: ctx.subaccountOwner,
             subaccountName: ctx.subaccountName,
-            quoteAmount: addDecimals(quoteAmount),
+            quoteAmount: addDecimals(toBigNumber(quoteAmount)).integerValue(
+              BigNumber.ROUND_DOWN,
+            ),
             spotLeverage,
           }),
       );

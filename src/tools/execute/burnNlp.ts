@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { addDecimals } from '@nadohq/client';
+import { addDecimals, toBigNumber } from '@nadohq/client';
+import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -35,7 +36,9 @@ export function registerBurnNlp(server: McpServer, ctx: NadoContext): void {
           ctx.client.spot.burnNlp({
             subaccountOwner: ctx.subaccountOwner,
             subaccountName: ctx.subaccountName,
-            nlpAmount: addDecimals(nlpAmount),
+            nlpAmount: addDecimals(toBigNumber(nlpAmount)).integerValue(
+              BigNumber.ROUND_DOWN,
+            ),
           }),
       );
     },

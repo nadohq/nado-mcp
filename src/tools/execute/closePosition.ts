@@ -5,6 +5,7 @@ import {
   packOrderAppendix,
   removeDecimals,
 } from '@nadohq/client';
+import BigNumber from 'bignumber.js';
 import { z } from 'zod';
 
 import type { NadoContext } from '../../context';
@@ -81,19 +82,21 @@ export function registerClosePosition(
           .catch(() => {}),
       ]);
 
-      const [summary, isolatedPositions, allMarkets] = await Promise.all([
-        ctx.client.subaccount.getSubaccountSummary({
-          subaccountOwner: ctx.subaccountOwner,
-          subaccountName: ctx.subaccountName,
-        }),
-        ctx.client.subaccount
-          .getIsolatedPositions({
+      const [summary, isolatedPositions, allMarkets, latestMarketPrice] =
+        await Promise.all([
+          ctx.client.subaccount.getSubaccountSummary({
             subaccountOwner: ctx.subaccountOwner,
             subaccountName: ctx.subaccountName,
-          })
-          .catch(() => []),
-        ctx.client.market.getAllMarkets(),
-      ]);
+          }),
+          ctx.client.subaccount
+            .getIsolatedPositions({
+              subaccountOwner: ctx.subaccountOwner,
+              subaccountName: ctx.subaccountName,
+            })
+            .catch(() => []),
+          ctx.client.market.getAllMarkets(),
+          ctx.client.market.getLatestMarketPrice({ productId }),
+        ]);
 
       const crossBalance = summary.balances.find(
         (b) => b.productId === productId && b.type === ProductEngineType.PERP,
@@ -128,6 +131,7 @@ export function registerClosePosition(
       const closeAmount = roundToIncrement(
         balance.amount.negated(),
         market.sizeIncrement,
+        BigNumber.ROUND_DOWN,
       );
       if (closeAmount.isZero()) {
         throw new Error(
@@ -136,11 +140,11 @@ export function registerClosePosition(
       }
 
       const isBuy = closeAmount.isPositive();
-      const slippageMultiplier = isBuy
-        ? 1 + slippagePct / 100
-        : 1 - slippagePct / 100;
+      const slippageFrac = slippagePct / 100;
+      const refPrice = isBuy ? latestMarketPrice.bid : latestMarketPrice.ask;
+      const slippageMultiplier = isBuy ? 1 + slippageFrac : 1 - slippageFrac;
       const closePrice = roundToIncrement(
-        balance.oraclePrice.times(slippageMultiplier),
+        refPrice.times(slippageMultiplier),
         market.priceIncrement,
       );
 
@@ -154,9 +158,9 @@ export function registerClosePosition(
         order: {
           subaccountOwner: ctx.subaccountOwner,
           subaccountName: ctx.subaccountName,
-          price: closePrice.toFixed(),
-          amount: closeAmount.toFixed(0),
-          expiration: getExpiration(),
+          price: closePrice.toFixed(18, BigNumber.ROUND_DOWN),
+          amount: closeAmount.toFixed(0, BigNumber.ROUND_DOWN),
+          expiration: getEngineOrderExpiration(),
           nonce: getOrderNonce(),
           appendix,
         },
@@ -185,10 +189,11 @@ export function registerClosePosition(
   );
 }
 
-const DEFAULT_ORDER_LIFETIME_SECONDS = 1000;
-
-function getExpiration(
-  secondsInFuture = DEFAULT_ORDER_LIFETIME_SECONDS,
-): number {
-  return Math.floor(Date.now() / 1000) + secondsInFuture;
+/**
+ * Returns an effectively-infinite expiration, matching the trade app.
+ * The engine interprets this as seconds; passing milliseconds puts
+ * the timestamp around year 58 000 — the order never expires.
+ */
+function getEngineOrderExpiration(): number {
+  return Date.now();
 }

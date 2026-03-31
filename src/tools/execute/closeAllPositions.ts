@@ -32,12 +32,13 @@ const REDUCE_ONLY_IOC_ISOLATED_APPENDIX = packOrderAppendix({
   isolated: { margin: 0 },
 });
 
-const DEFAULT_ORDER_LIFETIME_SECONDS = 1000;
-
-function getExpiration(
-  secondsInFuture = DEFAULT_ORDER_LIFETIME_SECONDS,
-): number {
-  return Math.floor(Date.now() / 1000) + secondsInFuture;
+/**
+ * Returns an effectively-infinite expiration, matching the trade app.
+ * The engine interprets this as seconds; passing milliseconds puts
+ * the timestamp around year 58 000 — the order never expires.
+ */
+function getEngineOrderExpiration(): number {
+  return Date.now();
 }
 
 export function registerCloseAllPositions(
@@ -98,6 +99,31 @@ export function registerCloseAllPositions(
           .catch(() => []),
         ctx.client.market.getAllMarkets(),
       ]);
+
+      const allProductIds = [
+        ...summary.balances
+          .filter(
+            (b) => b.type === ProductEngineType.PERP && !b.amount.isZero(),
+          )
+          .map((b) => b.productId),
+        ...isolatedPositions
+          .filter((p) => !p.baseBalance.amount.isZero())
+          .map((p) => p.baseBalance.productId),
+      ];
+      const uniqueProductIds = [...new Set(allProductIds)];
+
+      const marketPricesMap = new Map<
+        number,
+        { bid: BigNumber; ask: BigNumber }
+      >();
+      await Promise.all(
+        uniqueProductIds.map(async (pid) => {
+          const prices = await ctx.client.market.getLatestMarketPrice({
+            productId: pid,
+          });
+          marketPricesMap.set(pid, prices);
+        }),
+      );
 
       const matchesFilter = (
         productId: number,
@@ -175,7 +201,6 @@ export function registerCloseAllPositions(
         balance: {
           productId: number;
           amount: BigNumber;
-          oraclePrice: BigNumber;
         },
         marginMode: 'cross' | 'isolated',
       ) {
@@ -187,6 +212,7 @@ export function registerCloseAllPositions(
         const closeAmount = roundToIncrement(
           balance.amount.negated(),
           market.sizeIncrement,
+          BigNumber.ROUND_DOWN,
         );
         if (closeAmount.isZero()) {
           throw new Error(
@@ -195,11 +221,14 @@ export function registerCloseAllPositions(
         }
 
         const isBuy = closeAmount.isPositive();
-        const slippageMultiplier = isBuy
-          ? 1 + slippagePct / 100
-          : 1 - slippagePct / 100;
+        const slippageFrac = slippagePct / 100;
+        const latestPrice = marketPricesMap.get(balance.productId);
+        const refPrice = isBuy
+          ? (latestPrice?.bid ?? new BigNumber(0))
+          : (latestPrice?.ask ?? new BigNumber(0));
+        const slippageMultiplier = isBuy ? 1 + slippageFrac : 1 - slippageFrac;
         const closePrice = roundToIncrement(
-          balance.oraclePrice.times(slippageMultiplier),
+          refPrice.times(slippageMultiplier),
           market.priceIncrement,
         );
 
@@ -220,9 +249,9 @@ export function registerCloseAllPositions(
           order: {
             subaccountOwner: ctx.subaccountOwner,
             subaccountName: ctx.subaccountName,
-            price: closePrice.toFixed(),
-            amount: closeAmount.toFixed(0),
-            expiration: getExpiration(),
+            price: closePrice.toFixed(18, BigNumber.ROUND_DOWN),
+            amount: closeAmount.toFixed(0, BigNumber.ROUND_DOWN),
+            expiration: getEngineOrderExpiration(),
             nonce: getOrderNonce(),
             appendix,
           },

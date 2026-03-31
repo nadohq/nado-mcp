@@ -21,7 +21,7 @@ Gives AI assistants tools to query market data, manage positions, place orders, 
 
 ## Installation
 
-No manual install needed. MCP clients like Cursor and Claude Desktop resolve the package automatically when configured with `bunx` (see [MCP Client Setup](#mcp-client-setup)).
+No manual install needed. MCP clients like Cursor and Claude Desktop resolve the package automatically when configured with `npx` (see [MCP Client Setup](#mcp-client-setup)).
 
 ## MCP Client Setup
 
@@ -33,7 +33,7 @@ Add to your `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
 {
   "mcpServers": {
     "nado": {
-      "command": "bunx",
+      "command": "npx",
       "args": ["@nadohq/nado-mcp"],
       "env": {
         "DATA_ENV": "nadoMainnet",
@@ -53,7 +53,7 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "nado": {
-      "command": "bunx",
+      "command": "npx",
       "args": ["@nadohq/nado-mcp"],
       "env": {
         "DATA_ENV": "nadoMainnet",
