@@ -1,8 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
 
+import { fmtProductIds } from '../../utils/formatting';
 import { handleToolRequest } from '../../utils/handleToolRequest';
-import { ProductIdSchema } from '../../utils/schemas';
+import { ProductIdsSchema } from '../../utils/schemas';
 
 export function registerGetFundingRate(
   server: McpServer,
@@ -13,17 +14,19 @@ export function registerGetFundingRate(
     {
       title: 'Get Funding Rate',
       description:
-        'Get the current funding rate for a single perpetual market. Only valid for perp product IDs. Positive rates mean longs pay shorts; negative means shorts pay longs. For funding rates across multiple markets at once, use get_multi_product_funding_rates instead.',
+        'Get the current funding rate for one or more perpetual markets. Positive rates mean longs pay shorts; negative means shorts pay longs.',
       inputSchema: {
-        productId: ProductIdSchema,
+        productIds: ProductIdsSchema.describe(
+          'Perp product IDs to fetch funding rates for',
+        ),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ productId }: { productId: number }) =>
+    async ({ productIds }: { productIds: number[] }) =>
       handleToolRequest(
         'get_funding_rate',
-        `Failed to fetch funding rate for product ${productId}. Ensure this is a perp product ID.`,
-        () => client.market.getFundingRate({ productId }),
+        `Failed to fetch funding rates for products ${fmtProductIds(productIds)}. Ensure these are perp product IDs.`,
+        () => client.market.getMultiProductFundingRates({ productIds }),
       ),
   );
 }

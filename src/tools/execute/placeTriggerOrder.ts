@@ -47,6 +47,8 @@ export function registerPlaceTriggerOrder(
         'Place a trigger order (stop-loss, take-profit, or conditional) that executes when a price condition is met. ' +
         'Use oracle_price_above/below for standard TP/SL. Omit price for a stop-market order; provide price for a stop-limit order. ' +
         'Typically used with reduceOnly=true for TP/SL on existing positions. ' +
+        'IMPORTANT: The marginMode (and leverage for isolated) MUST match the target position. ' +
+        'For isolated positions, set marginMode="isolated" and the same leverage — otherwise the trigger order will be silently rejected. ' +
         'To attach TP/SL to a resting limit order, pass the order digest from place_order as orderDigest — ' +
         'the trigger will wait in waiting_dependency status until the resting order fills before activating. ' +
         SAFETY_DISCLAIMER,

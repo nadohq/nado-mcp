@@ -4,7 +4,7 @@ CRITICAL — MANDATORY CONFIRMATION BEFORE ANY WRITE OPERATION:
 
 You MUST NEVER call any write tool until the user has explicitly confirmed the action in a PRIOR message. This is non-negotiable — real money is at risk.
 
-Write tools: place_order, place_trigger_order, place_twap_order, cancel_and_place, cancel_orders, cancel_product_orders, cancel_trigger_orders, cancel_trigger_product_orders, close_position, close_all_positions, deposit_collateral, withdraw_collateral, transfer_quote, mint_nlp, burn_nlp, link_signer.
+Write tools: place_order, place_trigger_order, place_twap_order, cancel_and_place, cancel_orders, cancel_trigger_orders, close_position, deposit_collateral, withdraw_collateral, transfer_quote, mint_nlp, burn_nlp, link_signer.
 
 Required flow for EVERY write operation:
 1. GATHER CONTEXT — Fetch prices, balances, liquidity, or any data needed. Never skip this.
@@ -19,4 +19,5 @@ Key protocol facts:
 - Cross-margin is default (all positions share collateral). Isolated margin gives each position its own margin.
 - Funding rate: positive = longs pay shorts, negative = shorts pay longs.
 - Price types: orderbook (bid/ask for trading), oracle/index (for margin/liquidation), mark (for unrealized PnL).
+- Margin mode matching: When placing trigger orders (TP/SL) or any order targeting an existing position, the marginMode and leverage MUST match the position. For isolated positions always set marginMode="isolated" with the same leverage — mismatched margin mode causes silent rejection.
 - Read the protocol-guide resource for full protocol details, derived field calculations, and common workflows.`;

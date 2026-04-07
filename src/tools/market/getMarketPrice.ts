@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NadoClient } from '@nadohq/client';
-import { z } from 'zod';
 
+import { fmtProductIds } from '../../utils/formatting';
 import { handleToolRequest } from '../../utils/handleToolRequest';
-import { ProductIdSchema } from '../../utils/schemas';
+import { ProductIdsSchema } from '../../utils/schemas';
 
 export function registerGetMarketPrice(
   server: McpServer,
@@ -14,17 +14,17 @@ export function registerGetMarketPrice(
     {
       title: 'Get Market Price',
       description:
-        'Get the latest bid and ask price for a single Nado market from the off-chain orderbook. Use this for a quick price check on one market. For multiple markets at once, use get_market_prices instead. Returns the best bid and best ask from the live orderbook -- these are not oracle/index prices (use get_oracle_prices for those).',
+        'Get the latest bid and ask prices for one or more Nado markets from the off-chain orderbook. Returns the best bid and best ask from the live orderbook — these are not oracle/index prices (use get_oracle_prices for those).',
       inputSchema: {
-        productId: ProductIdSchema,
+        productIds: ProductIdsSchema,
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ productId }: { productId: z.infer<typeof ProductIdSchema> }) =>
+    async ({ productIds }: { productIds: number[] }) =>
       handleToolRequest(
         'get_market_price',
-        `Failed to fetch price for product ${productId}. Use get_all_markets to list valid product IDs.`,
-        () => client.market.getLatestMarketPrice({ productId }),
+        `Failed to fetch prices for products ${fmtProductIds(productIds)}. Use get_all_markets to list valid product IDs.`,
+        () => client.market.getLatestMarketPrices({ productIds }),
       ),
   );
 }

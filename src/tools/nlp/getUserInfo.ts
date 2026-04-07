@@ -8,16 +8,16 @@ import {
   OptionalSubaccountOwnerSchema,
 } from '../../utils/schemas';
 
-export function registerGetNlpMaxMintBurn(
+export function registerGetNlpUserInfo(
   server: McpServer,
   ctx: NadoContext,
 ): void {
   server.registerTool(
-    'get_nlp_max_mint_burn',
+    'get_nlp_user_info',
     {
-      title: 'Get User NLP Deposit/Withdraw Limits',
+      title: 'Get NLP User Info',
       description:
-        "Get the maximum amount a specific user can deposit into (mint) and withdraw from (burn) the NLP vault, based on their current subaccount balance and margin. Requires the user's wallet address. Use this before vault deposits/withdrawals to know available limits. For checking existing vault balances and lock status, use get_nlp_locked_balances instead.",
+        "Get a user's NLP vault position and limits: locked/unlocked NLP token balances with unlock timestamps, plus the maximum deposit (mint) and withdraw (burn) amounts based on current margin.",
       inputSchema: {
         subaccountOwner: OptionalSubaccountOwnerSchema,
         subaccountName: OptionalSubaccountNameSchema,
@@ -28,10 +28,14 @@ export function registerGetNlpMaxMintBurn(
       const { subaccountOwner, subaccountName } = resolveSubaccount(ctx, input);
 
       return handleToolRequest(
-        'get_nlp_max_mint_burn',
-        `Failed to fetch NLP mint/burn limits for ${subaccountOwner}/${subaccountName}.`,
+        'get_nlp_user_info',
+        `Failed to fetch NLP user info for ${subaccountOwner}/${subaccountName}.`,
         async () => {
-          const [maxMint, maxBurn] = await Promise.all([
+          const [lockedBalances, maxMint, maxBurn] = await Promise.all([
+            ctx.client.context.engineClient.getNlpLockedBalances({
+              subaccountOwner,
+              subaccountName,
+            }),
             ctx.client.context.engineClient.getMaxMintNlpAmount({
               subaccountOwner,
               subaccountName,
@@ -41,7 +45,11 @@ export function registerGetNlpMaxMintBurn(
               subaccountName,
             }),
           ]);
-          return { maxMintQuoteAmount: maxMint, maxBurnNlpAmount: maxBurn };
+          return {
+            lockedBalances,
+            maxMintQuoteAmount: maxMint,
+            maxBurnNlpAmount: maxBurn,
+          };
         },
       );
     },
