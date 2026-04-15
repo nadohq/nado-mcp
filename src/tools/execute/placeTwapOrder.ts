@@ -15,6 +15,7 @@ import {
   DEFAULT_SLIPPAGE_PCT,
   calculateTwapExpiration,
   roundToIncrement,
+  toMutationPriceString,
 } from '../../utils/orderBuilder';
 import { requireSigner } from '../../utils/requireSigner';
 import {
@@ -137,12 +138,10 @@ export function registerPlaceTwapOrder(
 
       const totalAmountX18 = perOrderSigned.times(numOrders);
 
+      const slippageFrac = slippagePct / 100;
       const orderPrice = isLong
-        ? roundToIncrement(refPrice.times(1000), priceIncrement).toFixed(
-            18,
-            BigNumber.ROUND_DOWN,
-          )
-        : '0';
+        ? toMutationPriceString(refPrice.times(1 + slippageFrac), priceIncrement)
+        : toMutationPriceString(refPrice.times(1 - slippageFrac), priceIncrement);
 
       const expiration = calculateTwapExpiration(numOrders, intervalSeconds);
 
