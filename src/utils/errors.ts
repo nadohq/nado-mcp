@@ -23,3 +23,10 @@ export class ToolExecutionError extends Error {
     this.name = 'ToolExecutionError';
   }
 }
+
+/** Format an error for process or tool output without exposing secret-like hex values. */
+export function formatError(err: unknown): string {
+  if (err instanceof ToolExecutionError) return redactSecrets(err.message);
+  if (err instanceof Error) return redactSecrets(err.message);
+  return redactSecrets(String(err));
+}

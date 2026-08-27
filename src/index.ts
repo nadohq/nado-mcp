@@ -1,6 +1,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createServer } from './server';
+import { formatError } from './utils/errors';
 
 async function main() {
   const server = createServer();
@@ -9,7 +10,7 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = formatError(error);
   console.error(`Fatal error starting nado-mcp server: ${message}`);
   process.exit(1);
 });
