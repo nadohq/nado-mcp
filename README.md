@@ -130,7 +130,7 @@ Save the printed address and private key.
 From your **main wallet**, authorize the hot key address. You can do this via:
 
 - The Nado frontend (Settings → Linked Signer)
-- The `link_signer` tool in this MCP server (requires the main key to be configured temporarily)
+- The `link_signer` tool in this MCP server after configuring the main wallet key in the MCP client environment
 - A direct contract call
 
 **Step 3: Configure the MCP server**
@@ -145,7 +145,7 @@ From your **main wallet**, authorize the hot key address. You can do this via:
 }
 ```
 
-`PRIVATE_KEY` is the hot key (used for signing). `SUBACCOUNT_OWNER` is the main wallet (used to identify the subaccount for queries and order parameters).
+`PRIVATE_KEY` is the hot key (used for signing). `SUBACCOUNT_OWNER` is the main wallet (used to identify the subaccount for queries and order parameters). For `link_signer`, temporarily configure the main wallet key as `PRIVATE_KEY`; the private key is never accepted in tool arguments or sent through model-visible input.
 
 **Step 4 (if compromised): Revoke**
 
